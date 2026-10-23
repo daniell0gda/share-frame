@@ -1,8 +1,13 @@
-"""share-frame daemon: a click-through bordered layer-shell overlay (GTK4)."""
+"""share-frame daemon: a click-through bordered layer-shell overlay (GTK4).
+
+The layer surface covers the whole monitor and never moves. The frame is a set of
+GTK widgets placed in a Gtk.Fixed; the input region is limited to the frame's
+chrome. Because the surface origin is constant (0,0 of the monitor), pointer
+coordinates are already monitor coordinates: no async-margin races while dragging.
+"""
 import os, socket, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sf_core import *  # noqa: F401,F403
-import sf_core
 
 if len(sys.argv) > 1 and sys.argv[1] == "--save-pick":
     save_pick(sys.argv[2], *sys.argv[3:7]); sys.exit(0)
@@ -14,8 +19,13 @@ import cairo
 
 SOCK, CONF = sys.argv[1], sys.argv[2]
 NS = "share-frame"
+DEBUG = os.environ.get("SHARE_FRAME_DEBUG")
+def dbg(*a):
+    if DEBUG: print(*a, file=sys.stderr, flush=True)
+
 CURSORS = {"move": "move", "tl": "nw-resize", "bl": "sw-resize", "br": "se-resize",
            "t": "n-resize", "b": "s-resize", "l": "w-resize", "r": "e-resize"}
+PARTS = ("t", "b", "l", "r", "tl", "bl", "br")
 
 class Frame:
     def __init__(self, app):
@@ -25,20 +35,38 @@ class Frame:
         LS.set_namespace(self.win, NS)
         LS.set_layer(self.win, LS.Layer.OVERLAY)
         LS.set_exclusive_zone(self.win, -1)
-        for e in (LS.Edge.TOP, LS.Edge.LEFT): LS.set_anchor(self.win, e, True)
-        css = Gtk.CssProvider()
-        css.load_from_string("window, window * { background: transparent; }")
-        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, 800)
-        self.area = Gtk.DrawingArea(); self.area.set_draw_func(self.draw)
-        self.win.set_child(self.area)
+        for e in (LS.Edge.TOP, LS.Edge.LEFT, LS.Edge.RIGHT, LS.Edge.BOTTOM):
+            LS.set_anchor(self.win, e, True)        # full monitor, origin = monitor 0,0
+        self.css = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), self.css, 800)
+        self.fixed = Gtk.Fixed(); self.win.set_child(self.fixed)
+        self.tint = Gtk.Box(css_classes=["sf-tint"]); self.fixed.put(self.tint, 0, 0)
+        self.parts = {}
+        for k in PARTS:
+            w = Gtk.Box(css_classes=["sf-part", "sf-grip" if len(k) == 2 else "sf-edge"])
+            self.parts[k] = w; self.fixed.put(w, 0, 0)
+        self.handle = Gtk.DrawingArea(css_classes=["sf-grip"]); self.handle.set_draw_func(self.draw_icon)
+        self.parts["move"] = self.handle; self.fixed.put(self.handle, 0, 0)
+        self.label = Gtk.Label(css_classes=["sf-label"]); self.fixed.put(self.label, 0, 0)
         click = Gtk.GestureClick(); click.connect("pressed", self.press)
-        click.connect("released", self.release); self.area.add_controller(click)
+        click.connect("released", self.release); self.win.add_controller(click)
         mot = Gtk.EventControllerMotion(); mot.connect("motion", self.motion)
-        mot.connect("leave", lambda *_: self.hover(None)); self.area.add_controller(mot)
+        mot.connect("leave", lambda *_: self.hover(None)); self.win.add_controller(mot)
         keys = Gtk.EventControllerKey(); keys.connect("key-pressed", self.key)
         self.win.add_controller(keys)
-        self.win.connect("realize", lambda *_: self.apply_input())
+        self.win.connect("realize", self.on_realize)
+        self.win.connect("map", lambda *_: GLib.timeout_add(300, self.dbg_layout))
         self.reload()
+
+    def on_realize(self, *_):
+        # GTK may reset the input region on layout; re-apply ours every time
+        self.win.get_surface().connect("layout", lambda *_: self.apply_input())
+        self.apply_input()
+
+    def dbg_layout(self):
+        dbg("layout", self.win.get_surface_transform(), self.win.get_width(), self.win.get_height(),
+            "monitor", self.mw, self.mh, "g", self.g)
+        return False
 
     # geometry -----------------------------------------------------------
     def monitors(self):
@@ -60,47 +88,34 @@ class Frame:
         rgba = Gdk.RGBA()
         if not rgba.parse(self.c["color"]): rgba.parse(DEFAULTS["color"])
         self.rgba = rgba
+        c = rgba.to_string(); a = float(self.c["opacity"])
+        self.css.load_from_string(f"""
+            window, window > fixed {{ background: transparent; }}
+            .sf-edge {{ background: alpha({c}, {a}); }}
+            .sf-grip {{ background: alpha({c}, 0.8); }}
+            .sf-grip.hot {{ background: {c}; }}
+            .sf-tint {{ background: alpha({c}, 0.12); }}
+            .sf-label {{ color: white; font-family: monospace; font-size: 12px; }}""")
         LS.set_monitor(self.win, self.mon)
         self.place()
         if [str(v) for v in self.g] != [self.c[k] for k in ("x", "y", "width", "height")] or reset:
             self.persist()
 
     def place(self):
+        """Lay out the widgets for self.g. Called at most once per frame while dragging."""
         x, y, w, h = self.g
-        LS.set_margin(self.win, LS.Edge.LEFT, x - PAD)
-        LS.set_margin(self.win, LS.Edge.TOP, y - PAD)
-        W, H = w + 2 * PAD, h + 2 * PAD
-        self.win.set_default_size(W, H); self.area.set_size_request(W, H)
-        self.win.set_size_request(W, H)
+        for k, (zx, zy, zw, zh) in zones_abs(self.g, self.b).items():
+            wd = self.parts[k]; wd.set_size_request(zw, zh); self.fixed.move(wd, zx, zy)
+        self.tint.set_visible(self.editing); self.label.set_visible(self.editing)
+        if self.editing:
+            self.tint.set_size_request(w, h); self.fixed.move(self.tint, x, y)
+            self.label.set_text(f"share-frame edit  {w}x{h}+{x}+{y}  arrows=move  "
+                                "shift+arrows=resize  alt=x10  Enter=save  Esc=cancel")
+            self.fixed.move(self.label, x + 10, y + 8)
         self.apply_input()
 
-    def rects(self): return zones(self.g[2], self.g[3], self.b)
-
-    def zone_at(self, px, py):
-        for k, (x, y, w, h) in self.rects().items():
-            s = 3 if len(k) == 1 else 0     # widen thin border strips a bit
-            if x - s <= px < x + w + s and y - s <= py < y + h + s: return k
-        return "move" if self.editing else None
-
-    def draw(self, _a, cr, W, H):
-        cr.set_operator(cairo.OPERATOR_SOURCE); cr.set_source_rgba(0, 0, 0, 0); cr.paint()
-        cr.set_operator(cairo.OPERATOR_OVER)
-        r = self.rgba; a = float(self.c["opacity"]); _, _, w, h = self.g; P, b = PAD, self.b
-        if self.editing:
-            cr.set_source_rgba(r.red, r.green, r.blue, 0.12); cr.rectangle(P, P, w, h); cr.fill()
-        cr.set_source_rgba(r.red, r.green, r.blue, a)
-        cr.set_fill_rule(cairo.FILL_RULE_EVEN_ODD)
-        cr.rectangle(P - b, P - b, w + 2 * b, h + 2 * b); cr.rectangle(P, P, w, h); cr.fill()
-        cr.set_fill_rule(cairo.FILL_RULE_WINDING)
-        z = self.rects()
-        for k in ("tl", "bl", "br"):
-            x, y, gw, gh = z[k]
-            cr.set_source_rgba(r.red, r.green, r.blue, 1.0 if self.zone == k else 0.75)
-            cr.rectangle(x, y, gw, gh); cr.fill()
-        x, y, hw, hh = z["move"]
-        cr.set_source_rgba(r.red, r.green, r.blue, 1.0 if self.zone == "move" else 0.85)
-        cr.rectangle(x, y, hw, hh); cr.fill()
-        cx, cy, s = x + hw / 2, y + hh / 2, hw / 2 - 4   # icon centered in its hit area
+    def draw_icon(self, _a, cr, W, H):
+        cx, cy, s = W / 2, H / 2, min(W, H) / 2 - 4   # centered in the handle
         cr.set_source_rgba(0.1, 0.1, 0.12, 1); cr.set_line_width(1.6)
         cr.move_to(cx - s, cy); cr.line_to(cx + s, cy); cr.move_to(cx, cy - s); cr.line_to(cx, cy + s)
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
@@ -108,59 +123,53 @@ class Frame:
             cr.move_to(tx - dx * 3 - dy * 3, ty - dy * 3 - dx * 3); cr.line_to(tx, ty)
             cr.line_to(tx - dx * 3 + dy * 3, ty - dy * 3 + dx * 3)
         cr.stroke()
-        if self.editing:
-            cr.set_source_rgba(1, 1, 1, 0.9); cr.select_font_face("monospace"); cr.set_font_size(14)
-            X, Y, w, h = self.g
-            cr.move_to(P + 10, P + 22)
-            cr.show_text(f"share-frame edit  {w}x{h}+{X}+{Y}  arrows=move  shift+arrows=resize  "
-                         "alt=x10  Enter=save  Esc=cancel")
 
     def apply_input(self):
         surf = self.win.get_surface()
         if surf is None: return
+        reg = cairo.Region()
+        for x, y, w, h in zones_abs(self.g, self.b).values():
+            reg.union(cairo.RectangleInt(int(x) - 3, int(y) - 3, int(w) + 6, int(h) + 6))
         if self.editing:
-            surf.set_input_region(None)
-            LS.set_keyboard_mode(self.win, LS.KeyboardMode.EXCLUSIVE)
+            reg.union(cairo.RectangleInt(*self.g))
         else:
-            reg = cairo.Region()           # only handle, grips and border strips
-            for x, y, w, h in self.rects().values():
-                reg.union(cairo.RectangleInt(int(x) - 3, int(y) - 3, int(w) + 6, int(h) + 6))
-            reg.subtract(cairo.RectangleInt(PAD, PAD, self.g[2], self.g[3]))
-            surf.set_input_region(reg)
-            LS.set_keyboard_mode(self.win, LS.KeyboardMode.NONE)
-        self.area.queue_draw()
+            reg.subtract(cairo.RectangleInt(*self.g))   # interior always passes clicks
+        if self.drag:                                    # keep events during a fast drag
+            reg = cairo.Region(cairo.RectangleInt(0, 0, self.mw, self.mh))
+        surf.set_input_region(reg)
+        dbg("input", reg.get_extents(), reg.num_rectangles(), "drag" if self.drag else "")
+        LS.set_keyboard_mode(self.win, LS.KeyboardMode.EXCLUSIVE if self.editing else LS.KeyboardMode.NONE)
 
     # modes ----------------------------------------------------------------
     def set_editing(self, on, keep=True):
         if on and not self.editing: self.saved = list(self.g)
-        if not on and self.editing and not keep: self.g = self.saved; self.place()
+        if not on and self.editing and not keep: self.g = self.saved
         if not on and self.editing and keep: self.persist()
-        self.editing = on; self.win.set_visible(True); self.apply_input()
+        self.editing = on; self.win.set_visible(True); self.place()
 
     def persist(self):
         c = load(CONF); c.update(dict(zip(("x", "y", "width", "height"), map(str, self.g))))
         c["monitor"] = self.c["monitor"]; save(CONF, c); self.c.update(c)
 
-    # pointer: absolute-coordinate drag (no feedback loop) --------------------
+    # pointer: surface == monitor, so event coords are monitor coords ---------
     def hover(self, z):
         if z != self.zone:
+            for k in ("tl", "bl", "br", "move"):
+                (self.parts[k].add_css_class if k == z else self.parts[k].remove_css_class)("hot")
             self.zone = z
-            self.area.set_cursor_from_name(CURSORS.get(z) if z else None)
-            self.area.queue_draw()
+            self.win.set_cursor_from_name(CURSORS.get(z) if z else None)
 
     def motion(self, _c, x, y):
-        if self.drag:
-            # absolute pos from the origin we placed the surface at: no feedback loop
-            self.drag["ptr"] = abs_from_local(self.g, x, y)
-        else:
-            self.hover(self.zone_at(x, y))
+        if self.drag: self.drag["ptr"] = (x, y)
+        else: self.hover(zone_at(self.g, self.b, x, y, self.editing))
 
-    def press(self, _g, _n, sx, sy):
-        mode = self.zone_at(sx, sy)
+    def press(self, _g, _n, x, y):
+        mode = zone_at(self.g, self.b, x, y, self.editing)
+        dbg("press", x, y, self.g, mode)
         if not mode: return
-        p0 = abs_from_local(self.g, sx, sy)
-        self.drag = {"mode": mode, "start": list(self.g), "p0": p0, "ptr": p0}
-        self.tick_id = self.area.add_tick_callback(self.tick)   # once per frame
+        self.drag = {"mode": mode, "start": list(self.g), "p0": (x, y), "ptr": (x, y)}
+        self.apply_input()
+        self.tick_id = self.win.add_tick_callback(self.tick)   # once per frame
 
     def tick(self, *_):
         if not self.drag: return False
@@ -172,8 +181,8 @@ class Frame:
 
     def release(self, *_):
         if self.drag:
-            self.tick(); self.drag = None
-            self.area.remove_tick_callback(self.tick_id); self.persist()
+            self.tick(); self.win.remove_tick_callback(self.tick_id)
+            self.drag = None; self.apply_input(); self.persist()
 
     def key(self, _c, kv, _code, st):
         if not self.editing: return False

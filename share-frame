@@ -16,7 +16,7 @@ running() { [[ -S $SOCK ]] && send ping >/dev/null 2>&1; }
 start() {
   running && return 0
   rm -f "$SOCK"
-  LD_PRELOAD=/usr/lib/libgtk4-layer-shell.so setsid -f $PY "$HERE/share_frame.py" "$SOCK" "$CONF" >/dev/null 2>&1
+  LD_PRELOAD=/usr/lib/libgtk4-layer-shell.so setsid -f $PY "$HERE/share_frame.py" "$SOCK" "$CONF" >/dev/null 2>"${XDG_RUNTIME_DIR:-/tmp}/share-frame.log"
   for _ in $(seq 50); do running && return 0; sleep 0.05; done
   echo "share-frame: daemon failed to start" >&2; exit 1
 }

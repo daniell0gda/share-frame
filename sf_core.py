@@ -88,6 +88,18 @@ def abs_from_local(g, lx, ly):
     """Pointer in monitor coords = surface origin (rect - PAD) + surface-local event pos."""
     return g[0] - PAD + lx, g[1] - PAD + ly
 
+def zones_abs(g, b):
+    """Zones in monitor coords (the surface covers the whole monitor)."""
+    ox, oy = g[0] - PAD, g[1] - PAD
+    return {k: (x + ox, y + oy, w, h) for k, (x, y, w, h) in zones(g[2], g[3], b).items()}
+
+def zone_at(g, b, px, py, editing=False):
+    for k, (x, y, w, h) in zones_abs(g, b).items():
+        s = 3 if len(k) == 1 else 0     # widen thin border strips a bit
+        if x - s <= px < x + w + s and y - s <= py < y + h + s: return k
+    if editing and g[0] <= px < g[0] + g[2] and g[1] <= py < g[1] + g[3]: return "move"
+    return None
+
 def focused_monitor():
     try:
         for m in json.loads(subprocess.check_output(["hyprctl", "monitors", "-j"])):

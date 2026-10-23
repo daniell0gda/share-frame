@@ -55,4 +55,17 @@ class T(unittest.TestCase):
             p = abs_from_local(g, lx, ly)
             g = drag_geom(start, "move", p[0] - p0[0], p[1] - p0[1], MW, MH)
         self.assertEqual(g, [400, 200, 1280, 720])
+    def test_zone_hit_abs(self):
+        g = [100, 100, 1280, 720]
+        self.assertEqual(zone_at(g, 4, 100 + 1280 + 11, 100 - 11), "move")   # handle center
+        self.assertEqual(zone_at(g, 4, 100 - 7, 100 + 720 + 7), "bl")
+        self.assertEqual(zone_at(g, 4, 700, 400), None)                      # interior passes
+        self.assertEqual(zone_at(g, 4, 700, 400, editing=True), "move")
+        self.assertEqual(zone_at(g, 4, 100 + 1281, 400), "r")
+    def test_fixed_surface_drag_press_offset_preserved(self):
+        # surface never moves: pointer delta == box delta, grab offset preserved
+        g = [100, 100, 1280, 720]; p0 = (1391, 89)
+        g2 = drag_geom(g, "move", 1500 - p0[0], 300 - p0[1], MW, MH)
+        hx, hy, _, _ = zones_abs(g, 4)["move"]; hx2, hy2, _, _ = zones_abs(g2, 4)["move"]
+        self.assertEqual((p0[0] - hx, p0[1] - hy), (1500 - hx2, 300 - hy2))
 unittest.main()

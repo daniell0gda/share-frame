@@ -22,28 +22,33 @@ and never appears inside the share itself.
   is painted only in that outer `b`-px ring (even-odd fill), interior fully
   transparent (`OPERATOR_SOURCE`, alpha 0). Hence the border lies *outside* the
   shared pixels.
-- **Surface padding** — the surface extends `PAD = 22` px past the shared
-  rectangle on every side, i.e. `(x-22, y-22, w+44, h+44)`. All chrome lives in
-  that padding: border ring (`b` px), corner grips (14×14, flush outside the
-  top-left, bottom-left and bottom-right corners) and a 22×22 move handle flush
-  outside the top-right corner (its bottom-left point is the corner), with the
-  icon centered in the hit area.
-- **Code layout** — `sf_core.py` holds config parsing and pure geometry
-  (`clamp`, `drag_geom`, `offscreen`, `default_geom`, `zones`), unit-tested in
-  `tests/test_geometry.py`; `share_frame.py` is the GTK daemon.
-- **Click-through** — in locked mode the input region is the union of border
-  strips, grips and handle (each widened by 3 px), minus the shared rectangle.
-  Interior and the rest of the padding pass input to whatever is underneath.
-  Keyboard interactivity is `NONE`.
-- **Pointer** — `EventControllerMotion` picks a zone and sets the cursor
-  (`move`, `nw/sw/se-resize`, `n/s/e/w-resize`). On press, the start geometry and
-  the absolute pointer are recorded. Absolute pointer = surface origin we last
-  placed (`rect - PAD`) + surface-local event position (`abs_from_local`), so the
-  surface moving under the pointer cancels out (v0.2 used raw local offsets and
-  ran away; v0.3 spawned `hyprctl cursorpos` per frame and lagged). Motion events
-  only store the latest pointer; a GTK frame-clock tick callback computes
-  `drag_geom(start, mode, ptr - p0)` and updates layer-shell margins/size at most
-  once per frame. No subprocesses during a drag. Config is written once, on release.
+- **Surface** — anchored to all four edges, so it covers the whole monitor and
+  its origin is the monitor's 0,0. It never moves or resizes. The frame is GTK
+  widgets in a `Gtk.Fixed` (border strips, grips, handle, edit tint/label), styled
+  with CSS and rendered by GSK; moving the frame = `Fixed.move` of a few widgets.
+- **Chrome layout** — `PAD = 22` px around the shared rectangle holds the border
+  ring (`b` px), 14×14 corner grips flush outside the top-left, bottom-left and
+  bottom-right corners, and a 22×22 move handle flush outside the top-right corner
+  (its bottom-left point is the corner), icon centered in its hit area.
+- **Click-through** — input region = border strips + grips + handle (each widened
+  3 px) minus the shared rectangle; in edit mode the rectangle is added. Everything
+  else on the monitor passes input through. GTK can reset the region on layout, so
+  it's re-applied on every `GdkSurface::layout`. During a drag the region is the
+  whole monitor so a fast pointer can't escape (the button is held, so nothing
+  underneath would get the click anyway).
+- **Pointer / drag** — because the surface origin is fixed, event coordinates
+  *are* monitor coordinates. History: v0.2 used surface-local offsets while moving
+  the surface via layer-shell margins (feedback loop, runaway); v0.3 polled
+  `hyprctl cursorpos` (lag); v0.4 used `origin + local`, which jumped at grab and
+  randomly mid-drag because margin changes are applied asynchronously by the
+  compositor, so some events were still in the old surface coordinates. v0.5
+  removes the moving surface entirely. Motion stores the latest pointer; a
+  frame-clock tick computes `drag_geom(start, mode, ptr - p0)` once per frame;
+  config is written on release.
+- **Code layout** — `sf_core.py`: config + pure geometry (`clamp`, `drag_geom`,
+  `zones`, `zones_abs`, `zone_at`, `offscreen`, `default_geom`), unit-tested in
+  `tests/test_geometry.py`; `share_frame.py`: GTK daemon. `SHARE_FRAME_DEBUG=1`
+  logs press/input-region/layout to `$XDG_RUNTIME_DIR/share-frame.log`.
 - **Clamping** — the shared rect is kept `PAD` px inside the monitor on all sides,
   so the border, grips and handle are always on-screen; minimum size 120×80.
 - **Monitor** — `monitor` is matched against `GdkMonitor.connector`; if empty or
@@ -127,6 +132,9 @@ Keyboard control is `share-frame edit` (exclusive keyboard until Enter/Esc) or
 binds to the CLI. A toplevel mode remains a future idea.
 
 ## Limitations
+
+- The surface is monitor-sized (transparent). Composited cheaply by Hyprland, but
+  it is one full-monitor buffer while shown.
 
 - Region coordinates are not read from the share picker — you pick the same
   rectangle twice (once in share-frame, once in Teams/xdg-desktop-portal).

@@ -33,6 +33,7 @@ launcher (`Super + Space`). Restart walker if it doesn't appear: `omarchy-restar
 | `share-frame pick` | Draw the region with `slurp`, save it, show the frame |
 | `share-frame edit` | Make the frame interactive: drag to move, drag edges/corners to resize |
 | `share-frame lock` | Save and go back to click-through |
+| `share-frame reset` | Recenter on the monitor at 1280×720 (use if it's lost) |
 | `share-frame show` / `hide` | Explicit show / hide |
 | `share-frame status` | `locked shown`, `edit hidden`, `stopped`… |
 | `share-frame quit` | Stop the daemon |
@@ -45,12 +46,13 @@ In edit mode: arrows move, `Shift`+arrows resize, hold `Alt` for 10px steps,
 
 Even when locked, the frame has a few live spots, all **outside** the shared area:
 
-- **Move handle** (four-way arrow, above the top-right corner): drag to move.
-- **Corner grips**: hover shows a resize cursor, drag to resize.
+- **Move handle** (four-way arrow, flush outside the top-right corner): drag to move.
+- **Corner grips** (other three corners): hover shows a resize cursor, drag to resize.
 - **Border strips**: drag to resize that edge.
 
-Everything else, including the whole interior, passes clicks through. Geometry is
-saved to the config after every move or resize.
+Everything else, including the whole interior, passes clicks through. The frame (handle included) always stays on
+the monitor; it's saved to the config when you let go. If a saved position is
+off-screen it's recentered on startup.
 
 > The frame can't be focused with Hyprland window shortcuts (it's a layer-shell
 > overlay, not a window). Why: see [docs/SPEC.md](docs/SPEC.md#focus).
@@ -62,7 +64,7 @@ Typical flow: `share-frame pick` → in Teams, share the same region → done.
 `~/.config/share-frame/config` (written by `pick`/`edit`, safe to hand-edit, then `share-frame reload`):
 
 ```ini
-monitor = DP-1      # Hyprland output name; empty = compositor's choice
+monitor = DP-1      # Hyprland output name; empty/unknown = focused monitor
 x = 200             # shared rectangle, monitor-local logical pixels
 y = 300
 width = 1920

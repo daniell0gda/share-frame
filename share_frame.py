@@ -1,40 +1,8 @@
 """share-frame daemon: a click-through bordered layer-shell overlay (GTK4)."""
-import json, os, socket, subprocess, sys
-
-DEFAULTS = {"monitor": "", "x": "100", "y": "100", "width": "1280", "height": "720",
-            "color": "#89b4fa", "border": "4", "opacity": "1.0"}
-
-def load(path):
-    c = dict(DEFAULTS)
-    try:
-        for line in open(path):
-            line = line.split("#", 1)[0].strip()
-            if "=" in line:
-                k, v = (s.strip() for s in line.split("=", 1))
-                if k in c: c[k] = v
-    except FileNotFoundError:
-        pass
-    return c
-
-def save(path, c):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write("# share-frame config — geometry is the SHARED rectangle, in monitor-local pixels.\n"
-                "# The border is drawn just outside it.\n")
-        for k in DEFAULTS: f.write(f"{k} = {c[k]}\n")
-
-def save_pick(path, x, y, w, h):
-    x, y, w, h = map(int, (x, y, w, h))
-    c = load(path)
-    mons = json.loads(subprocess.check_output(["hyprctl", "monitors", "-j"]))
-    for m in mons:
-        mw, mh = (m["width"], m["height"]) if m["transform"] % 2 == 0 else (m["height"], m["width"])
-        mw, mh = int(mw / m["scale"]), int(mh / m["scale"])
-        if m["x"] <= x < m["x"] + mw and m["y"] <= y < m["y"] + mh:
-            c.update(monitor=m["name"], x=x - m["x"], y=y - m["y"])
-            break
-    c.update(width=w, height=h)
-    save(path, c)
+import os, socket, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sf_core import *  # noqa: F401,F403
+import sf_core
 
 if len(sys.argv) > 1 and sys.argv[1] == "--save-pick":
     save_pick(sys.argv[2], *sys.argv[3:7]); sys.exit(0)
@@ -46,16 +14,12 @@ import cairo
 
 SOCK, CONF = sys.argv[1], sys.argv[2]
 NS = "share-frame"
-PAD = 30        # surface extends this far outside the shared rectangle
-GRIP = 14       # corner grip square (outside the rectangle)
-HW, HH = 30, 22 # move handle, above the top edge, right-aligned
-
-CURSORS = {"move": "move", "tl": "nw-resize", "tr": "ne-resize", "bl": "sw-resize",
-           "br": "se-resize", "t": "n-resize", "b": "s-resize", "l": "w-resize", "r": "e-resize"}
+CURSORS = {"move": "move", "tl": "nw-resize", "bl": "sw-resize", "br": "se-resize",
+           "t": "n-resize", "b": "s-resize", "l": "w-resize", "r": "e-resize"}
 
 class Frame:
     def __init__(self, app):
-        self.app, self.editing, self.zone = app, False, None
+        self.app, self.editing, self.zone, self.drag = app, False, None, None
         self.win = Gtk.Window(application=app, title=NS, decorated=False)
         LS.init_for_window(self.win)
         LS.set_namespace(self.win, NS)
@@ -67,9 +31,8 @@ class Frame:
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, 800)
         self.area = Gtk.DrawingArea(); self.area.set_draw_func(self.draw)
         self.win.set_child(self.area)
-        drag = Gtk.GestureDrag(); drag.connect("drag-begin", self.drag_begin)
-        drag.connect("drag-update", self.drag_update); drag.connect("drag-end", self.drag_end)
-        self.area.add_controller(drag)
+        click = Gtk.GestureClick(); click.connect("pressed", self.press)
+        click.connect("released", self.release); self.area.add_controller(click)
         mot = Gtk.EventControllerMotion(); mot.connect("motion", self.motion)
         mot.connect("leave", lambda *_: self.hover(None)); self.area.add_controller(mot)
         keys = Gtk.EventControllerKey(); keys.connect("key-pressed", self.key)
@@ -78,17 +41,29 @@ class Frame:
         self.reload()
 
     # geometry -----------------------------------------------------------
-    def reload(self):
+    def monitors(self):
+        ms = Gdk.Display.get_default().get_monitors()
+        return {ms.get_item(i).get_connector(): ms.get_item(i) for i in range(ms.get_n_items())}
+
+    def reload(self, reset=False):
         self.c = load(CONF)
-        self.g = [int(float(self.c[k])) for k in ("x", "y", "width", "height")]
+        mons = self.monitors()
+        name = fallback_monitor(self.c["monitor"], mons) or next(iter(mons), "")
+        self.mon = mons.get(name); self.c["monitor"] = name
+        geo = self.mon.get_geometry() if self.mon else None
+        self.mw, self.mh = (geo.width, geo.height) if geo else (1920, 1080)
+        try: g = [int(float(self.c[k])) for k in ("x", "y", "width", "height")]
+        except ValueError: g = [-1, -1, 0, 0]
+        if reset or offscreen(g, self.mw, self.mh): g = default_geom(self.mw, self.mh)
+        self.g = clamp(g, self.mw, self.mh)
         self.b = max(1, min(PAD - 2, int(float(self.c["border"]))))
-        rgba = Gdk.RGBA(); rgba.parse(self.c["color"]); self.rgba = rgba
-        mon = None
-        mons = Gdk.Display.get_default().get_monitors()
-        for i in range(mons.get_n_items()):
-            if mons.get_item(i).get_connector() == self.c["monitor"]: mon = mons.get_item(i)
-        LS.set_monitor(self.win, mon)
+        rgba = Gdk.RGBA()
+        if not rgba.parse(self.c["color"]): rgba.parse(DEFAULTS["color"])
+        self.rgba = rgba
+        LS.set_monitor(self.win, self.mon)
         self.place()
+        if [str(v) for v in self.g] != [self.c[k] for k in ("x", "y", "width", "height")] or reset:
+            self.persist()
 
     def place(self):
         x, y, w, h = self.g
@@ -99,20 +74,10 @@ class Frame:
         self.win.set_size_request(W, H)
         self.apply_input()
 
-    def rects(self):
-        """Interactive zones in surface coords; all lie outside the shared rect."""
-        _, _, w, h = self.g; P, b, G = PAD, self.b, GRIP
-        L, T, R, B = P, P, P + w, P + h            # shared rectangle edges
-        z = {"tl": (L - G, T - G, G, G), "tr": (R, T - G, G, G),
-             "bl": (L - G, B, G, G), "br": (R, B, G, G),
-             "t": (L, T - b, w, b), "b": (L, B, w, b),
-             "l": (L - b, T, b, h), "r": (R, T, b, h),
-             "move": (R - HW - 4, T - b - HH - 2, HW, HH)}
-        return z
+    def rects(self): return zones(self.g[2], self.g[3], self.b)
 
     def zone_at(self, px, py):
-        for k in ("move", "tl", "tr", "bl", "br", "t", "b", "l", "r"):
-            x, y, w, h = self.rects()[k]
+        for k, (x, y, w, h) in self.rects().items():
             s = 3 if len(k) == 1 else 0     # widen thin border strips a bit
             if x - s <= px < x + w + s and y - s <= py < y + h + s: return k
         return "move" if self.editing else None
@@ -126,19 +91,16 @@ class Frame:
         cr.set_source_rgba(r.red, r.green, r.blue, a)
         cr.set_fill_rule(cairo.FILL_RULE_EVEN_ODD)
         cr.rectangle(P - b, P - b, w + 2 * b, h + 2 * b); cr.rectangle(P, P, w, h); cr.fill()
+        cr.set_fill_rule(cairo.FILL_RULE_WINDING)
         z = self.rects()
-        for k in ("tl", "tr", "bl", "br"):
+        for k in ("tl", "bl", "br"):
             x, y, gw, gh = z[k]
             cr.set_source_rgba(r.red, r.green, r.blue, 1.0 if self.zone == k else 0.75)
             cr.rectangle(x, y, gw, gh); cr.fill()
         x, y, hw, hh = z["move"]
         cr.set_source_rgba(r.red, r.green, r.blue, 1.0 if self.zone == "move" else 0.85)
-        cr.new_sub_path(); rad = 5
-        cr.arc(x + hw - rad, y + rad, rad, -1.5708, 0); cr.arc(x + hw - rad, y + hh - rad, rad, 0, 1.5708)
-        cr.arc(x + rad, y + hh - rad, rad, 1.5708, 3.1416); cr.arc(x + rad, y + rad, rad, 3.1416, 4.7124)
-        cr.close_path(); cr.fill()
-        # four-way arrow icon
-        cx, cy, s = x + hw / 2, y + hh / 2, 7
+        cr.rectangle(x, y, hw, hh); cr.fill()
+        cx, cy, s = x + hw / 2, y + hh / 2, hw / 2 - 4   # icon centered in its hit area
         cr.set_source_rgba(0.1, 0.1, 0.12, 1); cr.set_line_width(1.6)
         cr.move_to(cx - s, cy); cr.line_to(cx + s, cy); cr.move_to(cx, cy - s); cr.line_to(cx, cy + s)
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
@@ -176,10 +138,10 @@ class Frame:
         self.editing = on; self.win.set_visible(True); self.apply_input()
 
     def persist(self):
-        c = load(CONF); c.update(dict(zip(("x", "y", "width", "height"), self.g)))
-        c["monitor"] = self.c["monitor"] or c["monitor"]; save(CONF, c); self.c = c
+        c = load(CONF); c.update(dict(zip(("x", "y", "width", "height"), map(str, self.g))))
+        c["monitor"] = self.c["monitor"]; save(CONF, c); self.c.update(c)
 
-    # pointer ----------------------------------------------------------------
+    # pointer: absolute-coordinate drag (no feedback loop) --------------------
     def hover(self, z):
         if z != self.zone:
             self.zone = z
@@ -187,29 +149,28 @@ class Frame:
             self.area.queue_draw()
 
     def motion(self, _c, x, y):
-        if not getattr(self, "dragging", False): self.hover(self.zone_at(x, y))
+        if not self.drag: self.hover(self.zone_at(x, y))
 
-    def drag_begin(self, _g, sx, sy):
-        self.start, self.mode, self.dragging = list(self.g), self.zone_at(sx, sy), True
+    def press(self, _g, _n, sx, sy):
+        mode = self.zone_at(sx, sy)
+        if not mode: return
+        try: p0 = cursor_pos()
+        except Exception: return
+        self.drag = (mode, list(self.g), p0)
+        GLib.timeout_add(16, self.tick)      # ~60 Hz
 
-    def drag_update(self, _g, dx, dy):
-        m = self.mode
-        if not m: return
-        # offsets are surface-local; add how far the surface origin already moved
-        if m == "move" or "l" in m: dx += self.g[0] - self.start[0]
-        if m == "move" or "t" in m: dy += self.g[1] - self.start[1]
-        x, y, w, h = self.start; dx, dy = int(dx), int(dy)
-        if m == "move": x, y = x + dx, y + dy
-        else:
-            if "l" in m: dx = min(dx, w - 50); x, w = x + dx, w - dx
-            if "r" in m: w = w + dx
-            if "t" in m: dy = min(dy, h - 50); y, h = y + dy, h - dy
-            if "b" in m: h = h + dy
-        self.g = [x, y, max(50, w), max(50, h)]; self.place()
+    def tick(self):
+        if not self.drag: return False
+        mode, start, (x0, y0) = self.drag
+        try: x1, y1 = cursor_pos()
+        except Exception: return True
+        g = drag_geom(start, mode, int(x1 - x0), int(y1 - y0), self.mw, self.mh)
+        if g != self.g: self.g = g; self.place()
+        return True
 
-    def drag_end(self, *_):
-        self.dragging = False
-        if self.mode and not self.editing: self.persist()
+    def release(self, *_):
+        if self.drag:
+            self.tick(); self.drag = None; self.persist()
 
     def key(self, _c, kv, _code, st):
         if not self.editing: return False
@@ -219,9 +180,8 @@ class Frame:
         d = {Gdk.KEY_Left: (-step, 0), Gdk.KEY_Right: (step, 0),
              Gdk.KEY_Up: (0, -step), Gdk.KEY_Down: (0, step)}.get(kv)
         if d:
-            if shift: w, h = max(50, w + d[0]), max(50, h + d[1])
-            else: x, y = x + d[0], y + d[1]
-            self.g = [x, y, w, h]; self.place(); return True
+            g = [x, y, w + d[0], h + d[1]] if shift else [x + d[0], y + d[1], w, h]
+            self.g = clamp(g, self.mw, self.mh); self.place(); return True
         if kv in (Gdk.KEY_Return, Gdk.KEY_KP_Enter): self.set_editing(False, True); return True
         if kv == Gdk.KEY_Escape: self.set_editing(False, False); return True
         return False
@@ -230,13 +190,16 @@ class Frame:
     def cmd(self, c):
         v = self.win.get_visible()
         if c == "ping": return "pong"
-        if c == "status": return ("edit" if self.editing else "locked") + (" shown" if v else " hidden") + f" hover={self.zone}"
+        if c == "status":
+            return ("edit" if self.editing else "locked") + (" shown" if v else " hidden") + \
+                f" {self.c['monitor']} {self.g[2]}x{self.g[3]}+{self.g[0]}+{self.g[1]}"
         if c == "toggle": self.win.set_visible(not v); return "shown" if not v else "hidden"
         if c == "show": self.win.set_visible(True); self.apply_input(); return "shown"
         if c == "hide": self.win.set_visible(False); return "hidden"
         if c == "edit": self.set_editing(True); return "edit"
         if c == "lock": self.set_editing(False, True); return "locked"
         if c == "reload": self.reload(); return "reloaded"
+        if c == "reset": self.reload(reset=True); self.win.set_visible(True); return "reset"
         if c == "quit": GLib.idle_add(self.app.quit); return "bye"
         return "?"
 

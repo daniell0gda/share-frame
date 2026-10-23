@@ -28,11 +28,11 @@ pick() {
 }
 case "${1:-toggle}" in
   toggle) if running; then send toggle; else start; send show; fi ;;
-  show|hide|edit|lock|reload) start; send "$1" ;;
+  show|hide|edit|lock|reload|reset) start; send "$1" ;;
   pick) pick ;;
   quit) running && send quit || true; rm -f "$SOCK" ;;
   watch) exec "$HERE/share-frame-watch" ;;
   status) running && send status || echo stopped ;;
   -h|--help|help) sed -n '1,200p' "$HERE/README.md" | awk '/^## Usage/,/^## Hyprland/' ;;
-  *) echo "usage: share-frame [toggle|pick|edit|lock|show|hide|quit|watch|status]" >&2; exit 2 ;;
+  *) echo "usage: share-frame [toggle|pick|edit|lock|reset|show|hide|quit|watch|status]" >&2; exit 2 ;;
 esac

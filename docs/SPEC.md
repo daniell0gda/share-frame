@@ -22,17 +22,31 @@ and never appears inside the share itself.
   is painted only in that outer `b`-px ring (even-odd fill), interior fully
   transparent (`OPERATOR_SOURCE`, alpha 0). Hence the border lies *outside* the
   shared pixels.
-- **Surface padding** — the surface extends `PAD = 30` px past the shared
-  rectangle on every side, i.e. `(x-30, y-30, w+60, h+60)`. All chrome lives in
-  that padding: border ring (`b` px), four corner grips (14×14, diagonal outside
-  each corner) and a 30×22 move handle just above the top edge, right-aligned.
+- **Surface padding** — the surface extends `PAD = 22` px past the shared
+  rectangle on every side, i.e. `(x-22, y-22, w+44, h+44)`. All chrome lives in
+  that padding: border ring (`b` px), corner grips (14×14, flush outside the
+  top-left, bottom-left and bottom-right corners) and a 22×22 move handle flush
+  outside the top-right corner (its bottom-left point is the corner), with the
+  icon centered in the hit area.
+- **Code layout** — `sf_core.py` holds config parsing and pure geometry
+  (`clamp`, `drag_geom`, `offscreen`, `default_geom`, `zones`), unit-tested in
+  `tests/test_geometry.py`; `share_frame.py` is the GTK daemon.
 - **Click-through** — in locked mode the input region is the union of border
   strips, grips and handle (each widened by 3 px), minus the shared rectangle.
   Interior and the rest of the padding pass input to whatever is underneath.
   Keyboard interactivity is `NONE`.
 - **Pointer** — `EventControllerMotion` picks a zone and sets the cursor
-  (`move`, `nw/ne/sw/se-resize`, `n/s/e/w-resize`); `GestureDrag` moves or
-  resizes; `drag-end` persists geometry to the config.
+  (`move`, `nw/sw/se-resize`, `n/s/e/w-resize`). On press, the start geometry
+  and the **absolute** cursor position (`hyprctl cursorpos -j`) are recorded; a
+  16 ms (~60 Hz) timer sets `geometry = drag_geom(start, mode, now - start_pos)`.
+  Surface-local offsets are never used, because the surface itself moves during
+  the drag (that caused a feedback loop / runaway in v0.2). Config is written
+  once, on release.
+- **Clamping** — the shared rect is kept `PAD` px inside the monitor on all sides,
+  so the border, grips and handle are always on-screen; minimum size 120×80.
+- **Monitor** — `monitor` is matched against `GdkMonitor.connector`; if empty or
+  unknown, the focused Hyprland monitor is used and written back. If the saved
+  geometry is off-screen or invalid on startup, it's reset to 1280×720 centered.
 
 ## Modes
 
@@ -65,7 +79,8 @@ moves, the origin shift is added back each update. Minimum size 50×50.
 
 ## CLI
 
-`share-frame [toggle|pick|edit|lock|show|hide|reload|status|quit|watch]`,
+`share-frame [toggle|pick|edit|lock|reset|show|hide|reload|status|quit|watch]`
+(`reset` recenters at the default size and saves),
 default `toggle`. Any command except `quit`/`status` auto-starts the daemon.
 
 ## Hyprland integration

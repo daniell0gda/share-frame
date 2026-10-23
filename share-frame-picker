@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# share-frame-picker — custom picker for xdg-desktop-portal-hyprland.
+# Offers "share-frame area" (shares exactly the inside of the frame) or falls
+# back to the normal picker. Prints xdph's format on stdout:
+#   [SELECTION]<flags>/region:<output>@<x>,<y>,<w>,<h>   (monitor-local, logical px)
+set -uo pipefail
+HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/share-frame/config"
+fallback() {
+  for p in "${SHARE_FRAME_FALLBACK_PICKER:-}" hyprland-preview-share-picker hyprland-share-picker; do
+    [[ -n $p ]] && command -v "$p" >/dev/null && exec "$p" "$@"
+  done
+  echo "share-frame-picker: no fallback picker found" >&2; exit 1
+}
+[[ -f $CONF ]] || fallback "$@"
+
+choice=${SHARE_FRAME_PICK:-$(/usr/bin/python3 "$HERE/picker_dialog.py")} || choice=cancel
+case "$choice" in
+  frame)
+    "$HERE/share-frame" show >/dev/null 2>&1
+    st=$("$HERE/share-frame" status 2>/dev/null)   # "locked shown DP-1 WxH+X+Y"
+    sel=$(/usr/bin/python3 - "$st" "$CONF" <<'P'
+import re, sys
+st, conf = sys.argv[1], sys.argv[2]
+m = re.search(r"(\S+) (\d+)x(\d+)\+(-?\d+)\+(-?\d+)$", st)
+if m:
+    mon, w, h, x, y = m.groups()
+else:
+    c = {}
+    for l in open(conf):
+        if "=" in l and not l.lstrip().startswith("#"):
+            k, v = l.split("=", 1); c[k.strip()] = v.split(" #")[0].strip()
+    mon, x, y, w, h = c.get("monitor", ""), c["x"], c["y"], c["width"], c["height"]
+print(f"region:{mon}@{x},{y},{w},{h}")
+P
+)
+    echo "[SELECTION]/$sel" ;;
+  other) fallback "$@" ;;
+  *) exit 1 ;;
+esac

@@ -91,6 +91,39 @@ bind = SUPER CTRL, F, exec, share-frame edit
 
 It's a layer-shell surface, so it's on every workspace already (no `pin` needed).
 
+## Share exactly the frame (portal picker)
+
+Teams/Chromium can't "see" the overlay, so share-frame ships a picker for
+xdg-desktop-portal-hyprland. Set it in `~/.config/hypr/xdph.conf`:
+
+```ini
+screencopy {
+    allow_token_by_default = true
+    custom_picker_binary = /home/you/.local/bin/share-frame-picker
+}
+```
+
+```sh
+systemctl --user restart xdg-desktop-portal-hyprland
+```
+
+`install.sh` adds this only if `xdph.conf` is missing or has no
+`custom_picker_binary` (with a backup); otherwise it prints the line to change.
+
+When an app asks to share, a small dialog appears:
+
+- **share-frame area** (`Enter`/`1`): shares exactly the inside of the frame
+  (shows the frame if hidden).
+- **Screen / window / region…** (`2`): opens your normal picker
+  (`hyprland-preview-share-picker`, else `hyprland-share-picker`; override with
+  `SHARE_FRAME_FALLBACK_PICKER`).
+
+Optional, make the dialog float:
+
+```ini
+windowrule = float, class:^(dev.ferens.ShareFramePicker)$
+```
+
 ## Auto-show while sharing
 
 ```ini

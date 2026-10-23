@@ -131,6 +131,20 @@ Consequence: the layer-shell frame has no keyboard focus while locked.
 Keyboard control is `share-frame edit` (exclusive keyboard until Enter/Esc) or
 binds to the CLI. A toplevel mode remains a future idea.
 
+## Portal picker
+
+`share-frame-picker` is an xdph `screencopy:custom_picker_binary`. xdph (1.4.1)
+runs it with `WAYLAND_DISPLAY`, `HYPRLAND_INSTANCE_SIGNATURE`,
+`XDPH_WINDOW_SHARING_LIST` and optionally `--allow-token`, and parses stdout for
+`[SELECTION]<flags>/<target>` where flags may contain `r` (allow restore token)
+and target is `screen:<output>`, `window:<handle>` or
+`region:<output>@<x>,<y>,<w>,<h>` — monitor-local logical pixels (the reference
+picker subtracts the screen's Qt geometry origin). For the frame it prints
+`[SELECTION]/region:<monitor>@x,y,w,h` from the live daemon (`status`) or the
+config, without `r` (the frame may move, so no restore token). Any other choice
+`exec`s the fallback picker with the same arguments. `SHARE_FRAME_PICK=frame|other`
+skips the dialog (testing/automation). No output / non-zero exit = cancel.
+
 ## Limitations
 
 - The surface is monitor-sized (transparent). Composited cheaply by Hyprland, but

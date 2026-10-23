@@ -36,12 +36,14 @@ and never appears inside the share itself.
   Interior and the rest of the padding pass input to whatever is underneath.
   Keyboard interactivity is `NONE`.
 - **Pointer** — `EventControllerMotion` picks a zone and sets the cursor
-  (`move`, `nw/sw/se-resize`, `n/s/e/w-resize`). On press, the start geometry
-  and the **absolute** cursor position (`hyprctl cursorpos -j`) are recorded; a
-  16 ms (~60 Hz) timer sets `geometry = drag_geom(start, mode, now - start_pos)`.
-  Surface-local offsets are never used, because the surface itself moves during
-  the drag (that caused a feedback loop / runaway in v0.2). Config is written
-  once, on release.
+  (`move`, `nw/sw/se-resize`, `n/s/e/w-resize`). On press, the start geometry and
+  the absolute pointer are recorded. Absolute pointer = surface origin we last
+  placed (`rect - PAD`) + surface-local event position (`abs_from_local`), so the
+  surface moving under the pointer cancels out (v0.2 used raw local offsets and
+  ran away; v0.3 spawned `hyprctl cursorpos` per frame and lagged). Motion events
+  only store the latest pointer; a GTK frame-clock tick callback computes
+  `drag_geom(start, mode, ptr - p0)` and updates layer-shell margins/size at most
+  once per frame. No subprocesses during a drag. Config is written once, on release.
 - **Clamping** — the shared rect is kept `PAD` px inside the monitor on all sides,
   so the border, grips and handle are always on-screen; minimum size 120×80.
 - **Monitor** — `monitor` is matched against `GdkMonitor.connector`; if empty or

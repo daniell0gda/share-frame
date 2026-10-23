@@ -149,28 +149,31 @@ class Frame:
             self.area.queue_draw()
 
     def motion(self, _c, x, y):
-        if not self.drag: self.hover(self.zone_at(x, y))
+        if self.drag:
+            # absolute pos from the origin we placed the surface at: no feedback loop
+            self.drag["ptr"] = abs_from_local(self.g, x, y)
+        else:
+            self.hover(self.zone_at(x, y))
 
     def press(self, _g, _n, sx, sy):
         mode = self.zone_at(sx, sy)
         if not mode: return
-        try: p0 = cursor_pos()
-        except Exception: return
-        self.drag = (mode, list(self.g), p0)
-        GLib.timeout_add(16, self.tick)      # ~60 Hz
+        p0 = abs_from_local(self.g, sx, sy)
+        self.drag = {"mode": mode, "start": list(self.g), "p0": p0, "ptr": p0}
+        self.tick_id = self.area.add_tick_callback(self.tick)   # once per frame
 
-    def tick(self):
+    def tick(self, *_):
         if not self.drag: return False
-        mode, start, (x0, y0) = self.drag
-        try: x1, y1 = cursor_pos()
-        except Exception: return True
-        g = drag_geom(start, mode, int(x1 - x0), int(y1 - y0), self.mw, self.mh)
+        (x0, y0), (x1, y1) = self.drag["p0"], self.drag["ptr"]
+        g = drag_geom(self.drag["start"], self.drag["mode"], round(x1 - x0), round(y1 - y0),
+                      self.mw, self.mh)
         if g != self.g: self.g = g; self.place()
         return True
 
     def release(self, *_):
         if self.drag:
-            self.tick(); self.drag = None; self.persist()
+            self.tick(); self.drag = None
+            self.area.remove_tick_callback(self.tick_id); self.persist()
 
     def key(self, _c, kv, _code, st):
         if not self.editing: return False

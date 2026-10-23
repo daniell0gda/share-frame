@@ -42,4 +42,17 @@ class T(unittest.TestCase):
     def test_color_survives_comment_parsing(self):
         import tempfile
         p = tempfile.mktemp(); save(p, dict(DEFAULTS)); self.assertEqual(load(p)["color"], "#89b4fa"); os.unlink(p)
+    def test_origin_plus_local_is_stable(self):
+        # pointer fixed on screen at (500, 300); surface moves, local coords shift oppositely
+        for g in ([100, 100, 1280, 720], [400, 150, 1280, 720], [PAD, PAD, 640, 480]):
+            lx, ly = 500 - (g[0] - PAD), 300 - (g[1] - PAD)
+            self.assertEqual(abs_from_local(g, lx, ly), (500, 300))
+    def test_simulated_drag_no_runaway(self):
+        g = [100, 100, 1280, 720]; start = list(g); p0 = abs_from_local(g, PAD + 1290, 10)
+        for step in range(1, 101):          # mouse moves +3,+1 px per event
+            ax, ay = p0[0] + 3 * step, p0[1] + step
+            lx, ly = ax - (g[0] - PAD), ay - (g[1] - PAD)     # what GTK reports locally
+            p = abs_from_local(g, lx, ly)
+            g = drag_geom(start, "move", p[0] - p0[0], p[1] - p0[1], MW, MH)
+        self.assertEqual(g, [400, 200, 1280, 720])
 unittest.main()

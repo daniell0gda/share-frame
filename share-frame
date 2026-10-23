@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# share-frame — mark the screen region you share, on Hyprland.
+set -euo pipefail
+HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/share-frame/config"
+SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/share-frame.sock"
+PY=/usr/bin/python3
+
+send() { $PY - "$SOCK" "$1" <<'P'
+import socket,sys
+s=socket.socket(socket.AF_UNIX);s.settimeout(1)
+s.connect(sys.argv[1]);s.sendall(sys.argv[2].encode());print(s.recv(64).decode())
+P
+}
+running() { [[ -S $SOCK ]] && send ping >/dev/null 2>&1; }
+start() {
+  running && return 0
+  rm -f "$SOCK"
+  LD_PRELOAD=/usr/lib/libgtk4-layer-shell.so setsid -f $PY "$HERE/share_frame.py" "$SOCK" "$CONF" >/dev/null 2>&1
+  for _ in $(seq 50); do running && return 0; sleep 0.05; done
+  echo "share-frame: daemon failed to start" >&2; exit 1
+}
+pick() {
+  command -v slurp >/dev/null || { echo "share-frame: slurp missing (sudo pacman -S slurp)" >&2; exit 1; }
+  sel=$(slurp -d -b 00000044 -c 89b4faff -f '%x %y %w %h') || exit 1
+  $PY "$HERE/share_frame.py" --save-pick "$CONF" $sel
+  if running; then send reload >/dev/null; send show >/dev/null; else start; send show >/dev/null; fi
+}
+case "${1:-toggle}" in
+  toggle) if running; then send toggle; else start; send show; fi ;;
+  show|hide|edit|lock|reload) start; send "$1" ;;
+  pick) pick ;;
+  quit) running && send quit || true; rm -f "$SOCK" ;;
+  watch) exec "$HERE/share-frame-watch" ;;
+  status) running && send status || echo stopped ;;
+  -h|--help|help) sed -n '1,200p' "$HERE/README.md" | awk '/^## Usage/,/^## Hyprland/' ;;
+  *) echo "usage: share-frame [toggle|pick|edit|lock|show|hide|quit|watch|status]" >&2; exit 2 ;;
+esac

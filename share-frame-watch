@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Show the frame while Hyprland reports an active screencast, hide it after.
+set -euo pipefail
+sock="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"
+socat -U - "UNIX-CONNECT:$sock" | while IFS= read -r line; do
+  case "$line" in
+    screencast\>\>1,*) share-frame show >/dev/null ;;
+    screencast\>\>0,*) share-frame hide >/dev/null ;;
+  esac
+done

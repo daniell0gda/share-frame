@@ -41,6 +41,20 @@ launcher (`Super + Space`). Restart walker if it doesn't appear: `omarchy-restar
 In edit mode: arrows move, `Shift`+arrows resize, hold `Alt` for 10px steps,
 `Enter` saves and locks, `Esc` cancels.
 
+### Handle and grips (locked mode)
+
+Even when locked, the frame has a few live spots, all **outside** the shared area:
+
+- **Move handle** (four-way arrow, above the top-right corner): drag to move.
+- **Corner grips**: hover shows a resize cursor, drag to resize.
+- **Border strips**: drag to resize that edge.
+
+Everything else, including the whole interior, passes clicks through. Geometry is
+saved to the config after every move or resize.
+
+> The frame can't be focused with Hyprland window shortcuts (it's a layer-shell
+> overlay, not a window). Why: see [docs/SPEC.md](docs/SPEC.md#focus).
+
 Typical flow: `share-frame pick` → in Teams, share the same region → done.
 
 ## Config

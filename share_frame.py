@@ -46,11 +46,16 @@ import cairo
 
 SOCK, CONF = sys.argv[1], sys.argv[2]
 NS = "share-frame"
-EDGE = 24  # px grab zone for resizing in edit mode
+PAD = 30        # surface extends this far outside the shared rectangle
+GRIP = 14       # corner grip square (outside the rectangle)
+HW, HH = 30, 22 # move handle, above the top edge, right-aligned
+
+CURSORS = {"move": "move", "tl": "nw-resize", "tr": "ne-resize", "bl": "sw-resize",
+           "br": "se-resize", "t": "n-resize", "b": "s-resize", "l": "w-resize", "r": "e-resize"}
 
 class Frame:
     def __init__(self, app):
-        self.app, self.editing = app, False
+        self.app, self.editing, self.zone = app, False, None
         self.win = Gtk.Window(application=app, title=NS, decorated=False)
         LS.init_for_window(self.win)
         LS.set_namespace(self.win, NS)
@@ -63,7 +68,10 @@ class Frame:
         self.area = Gtk.DrawingArea(); self.area.set_draw_func(self.draw)
         self.win.set_child(self.area)
         drag = Gtk.GestureDrag(); drag.connect("drag-begin", self.drag_begin)
-        drag.connect("drag-update", self.drag_update); self.area.add_controller(drag)
+        drag.connect("drag-update", self.drag_update); drag.connect("drag-end", self.drag_end)
+        self.area.add_controller(drag)
+        mot = Gtk.EventControllerMotion(); mot.connect("motion", self.motion)
+        mot.connect("leave", lambda *_: self.hover(None)); self.area.add_controller(mot)
         keys = Gtk.EventControllerKey(); keys.connect("key-pressed", self.key)
         self.win.add_controller(keys)
         self.win.connect("realize", lambda *_: self.apply_input())
@@ -73,7 +81,7 @@ class Frame:
     def reload(self):
         self.c = load(CONF)
         self.g = [int(float(self.c[k])) for k in ("x", "y", "width", "height")]
-        self.b = max(1, int(float(self.c["border"])))
+        self.b = max(1, min(PAD - 2, int(float(self.c["border"]))))
         rgba = Gdk.RGBA(); rgba.parse(self.c["color"]); self.rgba = rgba
         mon = None
         mons = Gdk.Display.get_default().get_monitors()
@@ -83,31 +91,67 @@ class Frame:
         self.place()
 
     def place(self):
-        x, y, w, h = self.g; b = self.b
-        LS.set_margin(self.win, LS.Edge.LEFT, x - b)
-        LS.set_margin(self.win, LS.Edge.TOP, y - b)
-        self.win.set_default_size(w + 2 * b, h + 2 * b)
-        self.area.set_size_request(w + 2 * b, h + 2 * b)
-        self.win.set_size_request(w + 2 * b, h + 2 * b)
-        self.area.queue_draw()
+        x, y, w, h = self.g
+        LS.set_margin(self.win, LS.Edge.LEFT, x - PAD)
+        LS.set_margin(self.win, LS.Edge.TOP, y - PAD)
+        W, H = w + 2 * PAD, h + 2 * PAD
+        self.win.set_default_size(W, H); self.area.set_size_request(W, H)
+        self.win.set_size_request(W, H)
+        self.apply_input()
+
+    def rects(self):
+        """Interactive zones in surface coords; all lie outside the shared rect."""
+        _, _, w, h = self.g; P, b, G = PAD, self.b, GRIP
+        L, T, R, B = P, P, P + w, P + h            # shared rectangle edges
+        z = {"tl": (L - G, T - G, G, G), "tr": (R, T - G, G, G),
+             "bl": (L - G, B, G, G), "br": (R, B, G, G),
+             "t": (L, T - b, w, b), "b": (L, B, w, b),
+             "l": (L - b, T, b, h), "r": (R, T, b, h),
+             "move": (R - HW - 4, T - b - HH - 2, HW, HH)}
+        return z
+
+    def zone_at(self, px, py):
+        for k in ("move", "tl", "tr", "bl", "br", "t", "b", "l", "r"):
+            x, y, w, h = self.rects()[k]
+            s = 3 if len(k) == 1 else 0     # widen thin border strips a bit
+            if x - s <= px < x + w + s and y - s <= py < y + h + s: return k
+        return "move" if self.editing else None
 
     def draw(self, _a, cr, W, H):
-        cr.set_operator(cairo.OPERATOR_SOURCE)
+        cr.set_operator(cairo.OPERATOR_SOURCE); cr.set_source_rgba(0, 0, 0, 0); cr.paint()
+        cr.set_operator(cairo.OPERATOR_OVER)
+        r = self.rgba; a = float(self.c["opacity"]); _, _, w, h = self.g; P, b = PAD, self.b
         if self.editing:
-            cr.set_source_rgba(self.rgba.red, self.rgba.green, self.rgba.blue, 0.12); cr.paint()
-        else:
-            cr.set_source_rgba(0, 0, 0, 0); cr.paint()
-        r = self.rgba; a = float(self.c["opacity"])
+            cr.set_source_rgba(r.red, r.green, r.blue, 0.12); cr.rectangle(P, P, w, h); cr.fill()
         cr.set_source_rgba(r.red, r.green, r.blue, a)
-        b = self.b
-        cr.rectangle(0, 0, W, H); cr.rectangle(b, b, W - 2 * b, H - 2 * b)
-        cr.set_fill_rule(cairo.FILL_RULE_EVEN_ODD); cr.fill()
+        cr.set_fill_rule(cairo.FILL_RULE_EVEN_ODD)
+        cr.rectangle(P - b, P - b, w + 2 * b, h + 2 * b); cr.rectangle(P, P, w, h); cr.fill()
+        z = self.rects()
+        for k in ("tl", "tr", "bl", "br"):
+            x, y, gw, gh = z[k]
+            cr.set_source_rgba(r.red, r.green, r.blue, 1.0 if self.zone == k else 0.75)
+            cr.rectangle(x, y, gw, gh); cr.fill()
+        x, y, hw, hh = z["move"]
+        cr.set_source_rgba(r.red, r.green, r.blue, 1.0 if self.zone == "move" else 0.85)
+        cr.new_sub_path(); rad = 5
+        cr.arc(x + hw - rad, y + rad, rad, -1.5708, 0); cr.arc(x + hw - rad, y + hh - rad, rad, 0, 1.5708)
+        cr.arc(x + rad, y + hh - rad, rad, 1.5708, 3.1416); cr.arc(x + rad, y + rad, rad, 3.1416, 4.7124)
+        cr.close_path(); cr.fill()
+        # four-way arrow icon
+        cx, cy, s = x + hw / 2, y + hh / 2, 7
+        cr.set_source_rgba(0.1, 0.1, 0.12, 1); cr.set_line_width(1.6)
+        cr.move_to(cx - s, cy); cr.line_to(cx + s, cy); cr.move_to(cx, cy - s); cr.line_to(cx, cy + s)
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            tx, ty = cx + dx * s, cy + dy * s
+            cr.move_to(tx - dx * 3 - dy * 3, ty - dy * 3 - dx * 3); cr.line_to(tx, ty)
+            cr.line_to(tx - dx * 3 + dy * 3, ty - dy * 3 + dx * 3)
+        cr.stroke()
         if self.editing:
             cr.set_source_rgba(1, 1, 1, 0.9); cr.select_font_face("monospace"); cr.set_font_size(14)
-            x, y, w, h = self.g
-            cr.move_to(b + 10, b + 22)
-            cr.show_text(f"share-frame edit  {w}x{h}+{x}+{y}  drag=move  edges=resize  "
-                         "arrows=move  shift+arrows=resize  alt=x10  Enter=save  Esc=cancel")
+            X, Y, w, h = self.g
+            cr.move_to(P + 10, P + 22)
+            cr.show_text(f"share-frame edit  {w}x{h}+{X}+{Y}  arrows=move  shift+arrows=resize  "
+                         "alt=x10  Enter=save  Esc=cancel")
 
     def apply_input(self):
         surf = self.win.get_surface()
@@ -116,7 +160,11 @@ class Frame:
             surf.set_input_region(None)
             LS.set_keyboard_mode(self.win, LS.KeyboardMode.EXCLUSIVE)
         else:
-            surf.set_input_region(cairo.Region())  # empty: clicks pass through
+            reg = cairo.Region()           # only handle, grips and border strips
+            for x, y, w, h in self.rects().values():
+                reg.union(cairo.RectangleInt(int(x) - 3, int(y) - 3, int(w) + 6, int(h) + 6))
+            reg.subtract(cairo.RectangleInt(PAD, PAD, self.g[2], self.g[3]))
+            surf.set_input_region(reg)
             LS.set_keyboard_mode(self.win, LS.KeyboardMode.NONE)
         self.area.queue_draw()
 
@@ -131,27 +179,37 @@ class Frame:
         c = load(CONF); c.update(dict(zip(("x", "y", "width", "height"), self.g)))
         c["monitor"] = self.c["monitor"] or c["monitor"]; save(CONF, c); self.c = c
 
-    # input ------------------------------------------------------------------
+    # pointer ----------------------------------------------------------------
+    def hover(self, z):
+        if z != self.zone:
+            self.zone = z
+            self.area.set_cursor_from_name(CURSORS.get(z) if z else None)
+            self.area.queue_draw()
+
+    def motion(self, _c, x, y):
+        if not getattr(self, "dragging", False): self.hover(self.zone_at(x, y))
+
     def drag_begin(self, _g, sx, sy):
-        x, y, w, h = self.g; W, H = w + 2 * self.b, h + 2 * self.b
-        self.start = list(self.g)
-        self.mode = (("l" if sx < EDGE else "r" if sx > W - EDGE else "") +
-                     ("t" if sy < EDGE else "b" if sy > H - EDGE else "")) or "move"
+        self.start, self.mode, self.dragging = list(self.g), self.zone_at(sx, sy), True
 
     def drag_update(self, _g, dx, dy):
-        if not self.editing: return
+        m = self.mode
+        if not m: return
         # offsets are surface-local; add how far the surface origin already moved
-        sx0, sy0 = self.start[0], self.start[1]
-        if self.mode == "move" or "l" in self.mode: dx += self.g[0] - sx0
-        if self.mode == "move" or "t" in self.mode: dy += self.g[1] - sy0
+        if m == "move" or "l" in m: dx += self.g[0] - self.start[0]
+        if m == "move" or "t" in m: dy += self.g[1] - self.start[1]
         x, y, w, h = self.start; dx, dy = int(dx), int(dy)
-        if self.mode == "move": x, y = x + dx, y + dy
+        if m == "move": x, y = x + dx, y + dy
         else:
-            if "l" in self.mode: dx = min(dx, w - 50); x, w = x + dx, w - dx
-            if "r" in self.mode: w = w + dx
-            if "t" in self.mode: dy = min(dy, h - 50); y, h = y + dy, h - dy
-            if "b" in self.mode: h = h + dy
+            if "l" in m: dx = min(dx, w - 50); x, w = x + dx, w - dx
+            if "r" in m: w = w + dx
+            if "t" in m: dy = min(dy, h - 50); y, h = y + dy, h - dy
+            if "b" in m: h = h + dy
         self.g = [x, y, max(50, w), max(50, h)]; self.place()
+
+    def drag_end(self, *_):
+        self.dragging = False
+        if self.mode and not self.editing: self.persist()
 
     def key(self, _c, kv, _code, st):
         if not self.editing: return False
@@ -172,7 +230,7 @@ class Frame:
     def cmd(self, c):
         v = self.win.get_visible()
         if c == "ping": return "pong"
-        if c == "status": return ("edit" if self.editing else "locked") + (" shown" if v else " hidden")
+        if c == "status": return ("edit" if self.editing else "locked") + (" shown" if v else " hidden") + f" hover={self.zone}"
         if c == "toggle": self.win.set_visible(not v); return "shown" if not v else "hidden"
         if c == "show": self.win.set_visible(True); self.apply_input(); return "shown"
         if c == "hide": self.win.set_visible(False); return "hidden"

@@ -22,15 +22,23 @@ and never appears inside the share itself.
   is painted only in that outer `b`-px ring (even-odd fill), interior fully
   transparent (`OPERATOR_SOURCE`, alpha 0). Hence the border lies *outside* the
   shared pixels.
-- **Click-through** — in locked mode the surface input region is set to an empty
-  `cairo.Region()` and keyboard interactivity is `NONE`; all pointer events go
-  to whatever is underneath.
+- **Surface padding** — the surface extends `PAD = 30` px past the shared
+  rectangle on every side, i.e. `(x-30, y-30, w+60, h+60)`. All chrome lives in
+  that padding: border ring (`b` px), four corner grips (14×14, diagonal outside
+  each corner) and a 30×22 move handle just above the top edge, right-aligned.
+- **Click-through** — in locked mode the input region is the union of border
+  strips, grips and handle (each widened by 3 px), minus the shared rectangle.
+  Interior and the rest of the padding pass input to whatever is underneath.
+  Keyboard interactivity is `NONE`.
+- **Pointer** — `EventControllerMotion` picks a zone and sets the cursor
+  (`move`, `nw/ne/sw/se-resize`, `n/s/e/w-resize`); `GestureDrag` moves or
+  resizes; `drag-end` persists geometry to the config.
 
 ## Modes
 
 | Mode | Input region | Keyboard | Look |
 |---|---|---|---|
-| locked | empty | none | border only |
+| locked | border + grips + handle | none | border, grips, handle |
 | edit | full surface | exclusive | border + 12% tint + help text |
 
 Transitions:
@@ -78,6 +86,29 @@ default `toggle`. Any command except `quit`/`status` auto-starts the daemon.
 via `socat` and maps `screencast>>1,*` → `show`, `screencast>>0,*` → `hide`.
 Intended for `exec-once`.
 
+## Focus
+
+Evaluated: switching to (or adding) a floating xdg-toplevel window so it joins
+Hyprland's focus cycle, with a focused-state color. Rejected for now:
+
+- A toplevel can't position itself on Wayland; placement would depend on
+  `windowrule`s plus `hyprctl dispatch movewindowpixel/resizewindowpixel`
+  round-trips, and drag would need `xdg_toplevel.move`/`resize` with geometry read
+  back from `hyprctl clients`.
+- Hyprland draws its own border, shadow, rounding and dim around focused windows;
+  these need `noborder`, `noshadow`, `rounding 0`, `nodim`, `noblur` rules, and if
+  any rule doesn't match (title/class change, Hyprland rule syntax changes) the
+  white focus border sits right on the shared edge and can leak into the share.
+- Being in the focus cycle means `Alt+Tab`/`Super+arrows` land on the frame,
+  which is the opposite of what you want mid-meeting; it can also be tiled/
+  stacked below a fullscreen app, while the overlay layer always stays on top.
+- Hyprland does honor `wl_surface` input regions for windows, so click-through
+  itself would work; the cost is the positioning and border risks above.
+
+Consequence: the layer-shell frame has no keyboard focus while locked.
+Keyboard control is `share-frame edit` (exclusive keyboard until Enter/Esc) or
+binds to the CLI. A toplevel mode remains a future idea.
+
 ## Limitations
 
 - Region coordinates are not read from the share picker — you pick the same
@@ -89,6 +120,8 @@ Intended for `exec-once`.
 - Fractional scaling: geometry is in logical px; may be off by a pixel.
 
 ## Future ideas
+
+- Optional `mode = toplevel` with focus-colored border (see Focus).
 
 - Read region from `hyprland-share-picker` / portal restore token to avoid double picking.
 - Dim everything outside the region instead of (or in addition to) a border.

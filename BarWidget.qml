@@ -52,6 +52,12 @@ BarWidget {
   }
 
   Process {
+    id: watchProcess
+    command: [root.cli, "watch"]
+    running: true
+  }
+
+  Process {
     id: statusProcess
     command: [root.cli, "status"]
     stdout: StdioCollector {

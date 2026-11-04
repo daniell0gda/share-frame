@@ -142,14 +142,17 @@ bind = SUPER CTRL, F, exec, share-frame edit
 
 The frame is a layer-shell surface, so it is on every workspace already.
 
-## Auto-show while sharing (optional)
+## Auto-show and auto-hide while sharing
 
-Start `share-frame watch` with your session (Omarchy 4: `o.launch_on_start("share-frame watch")`
+The frame appears when a share starts and hides 3 seconds after the last share stops.
+The Omarchy plugin starts this watcher for you. Without the plugin, start
+`share-frame watch` with your session (Omarchy 4: `o.launch_on_start("share-frame watch")`
 in `~/.config/hypr/autostart.lua`; older: `exec-once = share-frame watch`).
 
-It listens on Hyprland's event socket. It shows the frame on `screencast>>1` and
-hides it on `screencast>>0`. Hyprland fires these for any screencast, including
-screen recording, not per region.
+It listens on Hyprland's event socket and counts running screencasts. Teams opens short
+preview streams before the real one, so the delay stops the frame from flickering.
+Change the delay with `SHARE_FRAME_HIDE_DELAY` (seconds). Hyprland sends these events
+for any screencast, including screen recording, not per region.
 
 ## Config
 

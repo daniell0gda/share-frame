@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 # Install share-frame for the current user (no sudo). Safe to run again.
-# The Omarchy plugin runs this on load; run it by hand for a standalone install.
+#   --quiet            used by the Omarchy plugin on load; never edits your Hyprland config
+#   --register-portal  also add the picker to ~/.config/hypr/xdph.conf (a backup is kept)
+# Run by hand without options, it asks before touching xdph.conf.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QUIET=0
-[[ ${1:-} == --quiet ]] && QUIET=1
+REGISTER_PORTAL=0
+case "${1:-}" in
+  --quiet) QUIET=1 ;;
+  --register-portal) REGISTER_PORTAL=1 ;;
+esac
 say() { if ((QUIET)); then :; else echo "$@"; fi; }
 
 BIN=~/.local/bin
 PICKER="$BIN/share-frame-picker"
 XDPH=~/.config/hypr/xdph.conf
-portal_config_changed=0
 
 report_missing_packages() {
   local missing=()
@@ -36,22 +41,50 @@ LAUNCHER
   chmod +x "$PICKER"
 }
 
+portal_registered() {
+  [[ -f $XDPH ]] && grep -q 'custom_picker_binary.*share-frame-picker' "$XDPH"
+}
+
+another_picker_configured() {
+  [[ -f $XDPH ]] && grep -q custom_picker_binary "$XDPH" && ! portal_registered
+}
+
 register_picker_with_portal() {
   if [[ ! -f $XDPH ]]; then
     mkdir -p ~/.config/hypr
     printf 'screencopy {\n    allow_token_by_default = true\n    custom_picker_binary = %s\n}\n' "$PICKER" > "$XDPH"
-    portal_config_changed=1
-  elif ! grep -q custom_picker_binary "$XDPH"; then
+  else
     cp "$XDPH" "$XDPH.bak.$(date +%Y%m%d%H%M%S)"
     if grep -q 'screencopy *{' "$XDPH"; then
       sed -i "/screencopy *{/a\\    custom_picker_binary = $PICKER" "$XDPH"
     else
       printf '\nscreencopy {\n    custom_picker_binary = %s\n}\n' "$PICKER" >> "$XDPH"
     fi
-    portal_config_changed=1
-  elif ! grep -q share-frame-picker "$XDPH"; then
+  fi
+  systemctl --user restart xdg-desktop-portal-hyprland 2>/dev/null || true
+  say "Registered the share-frame picker in $XDPH (an existing file was backed up) and restarted the screencast portal."
+}
+
+consent_to_register_portal() {
+  ((REGISTER_PORTAL)) && return 0
+  ((QUIET)) && return 1
+  [[ -t 0 ]] || return 1
+  read -r -p "Add share-frame-picker to $XDPH? A backup is kept. [y/N] " answer
+  [[ $answer == [yY]* ]]
+}
+
+handle_portal_registration() {
+  portal_registered && return 0
+  if another_picker_configured; then
     say "NOTE: $XDPH already sets another custom_picker_binary; left unchanged."
     say "      To use share-frame, set: custom_picker_binary = $PICKER"
+    return 0
+  fi
+  if consent_to_register_portal; then
+    register_picker_with_portal
+  else
+    echo "PORTAL: unregistered"
+    say "To share the frame area, run: $HERE/install.sh --register-portal"
   fi
 }
 
@@ -73,11 +106,6 @@ report_missing_packages
 mkdir -p "$BIN"
 ln -sf "$HERE/share-frame" "$BIN/share-frame"
 write_picker_launcher
-register_picker_with_portal
 write_launcher_entry
-
-if ((portal_config_changed)); then
-  systemctl --user restart xdg-desktop-portal-hyprland 2>/dev/null || true
-  say "Registered the share-frame picker and restarted the screencast portal."
-fi
+handle_portal_registration
 say "Installed. Run 'share-frame pick' to choose a region."

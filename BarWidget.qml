@@ -12,7 +12,9 @@ BarWidget {
 
   property bool frameShown: false
   property string missingPackages: ""
+  property bool portalUnregistered: false
   readonly property bool needsPackages: missingPackages !== ""
+  readonly property bool needsPortal: !needsPackages && portalUnregistered
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -31,8 +33,13 @@ BarWidget {
     if (root.bar) root.bar.run("omarchy-launch-floating-terminal-with-presentation omarchy-pkg-add " + missingPackages)
   }
 
+  function registerPortal() {
+    if (!registerProcess.running) registerProcess.running = true
+  }
+
   function tooltip() {
     if (needsPackages) return "Share frame needs: " + missingPackages + " (click to install)"
+    if (needsPortal) return "Click to add the share-frame picker to ~/.config/hypr/xdph.conf (a backup is kept)"
     return frameShown
       ? "Share frame shown. Click hides, right click picks a region, middle click edits."
       : "Share frame hidden. Click shows, right click picks a region, middle click edits."
@@ -47,8 +54,15 @@ BarWidget {
       onStreamFinished: {
         var match = text.match(/^MISSING: (.+)$/m)
         root.missingPackages = match ? match[1] : ""
+        root.portalUnregistered = /^PORTAL: unregistered$/m.test(text)
       }
     }
+  }
+
+  Process {
+    id: registerProcess
+    command: ["bash", root.installer, "--register-portal"]
+    onExited: installProcess.running = true
   }
 
   Process {
@@ -84,10 +98,11 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: ""
-    active: root.frameShown && !root.needsPackages
+    active: root.frameShown && !root.needsPackages && !root.needsPortal
     tooltipText: root.tooltip()
     onPressed: function(b) {
       if (root.needsPackages) root.installPackages()
+      else if (root.needsPortal) root.registerPortal()
       else if (b === Qt.RightButton) root.runCommand("pick")
       else if (b === Qt.MiddleButton) root.runCommand("edit")
       else root.runCommand("toggle")

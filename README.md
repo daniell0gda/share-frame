@@ -27,9 +27,15 @@ omarchy plugin add https://github.com/daniell0gda/share-frame --enable
 A frame icon appears in the bar. On first load the plugin:
 
 - links `share-frame` into `~/.local/bin`
-- registers the share picker in `~/.config/hypr/xdph.conf` (your file is backed up first)
-- restarts `xdg-desktop-portal-hyprland`
+- writes its own picker launcher, `~/.local/bin/share-frame-picker`
 - adds a **share frame** entry to the app launcher
+- starts a watcher that shows the frame while you share and hides it afterwards
+
+It does **not** edit your Hyprland config by itself. To share the frame area, the screen
+share portal must know the picker. The bar icon shows a tooltip asking for this. When you
+click it, the plugin adds one `custom_picker_binary` line to `~/.config/hypr/xdph.conf`
+(a backup is kept) and restarts `xdg-desktop-portal-hyprland`. If you already set another
+`custom_picker_binary`, the plugin leaves it alone and tells you the line to change.
 
 If a package is missing, the bar icon tells you which one. Click it to install.
 
@@ -63,6 +69,8 @@ Any Hyprland setup works for the frame itself:
 git clone https://github.com/daniell0gda/share-frame ~/.local/share/share-frame
 ~/.local/share/share-frame/install.sh
 ```
+
+The installer asks before it edits `~/.config/hypr/xdph.conf`. Use `install.sh --register-portal` to answer yes without a prompt.
 
 ## Use
 
@@ -184,7 +192,7 @@ hide_delay = 1      # seconds the frame stays after the last share stops
   `~/.config/hypr/xdph.conf`, then run `systemctl --user restart xdg-desktop-portal-hyprland`.
   This uses a little more CPU.
 - **The dialog does not appear.** Check that `~/.config/hypr/xdph.conf` has
-  `custom_picker_binary = ~/.local/bin/share-frame-picker`. Run `~/.config/omarchy/plugins/io.github.daniell0gda.share-frame/install.sh` to repair it.
+  `custom_picker_binary = ~/.local/bin/share-frame-picker`. Run `~/.config/omarchy/plugins/io.github.daniell0gda.share-frame/install.sh --register-portal` to repair it.
 - **The frame is lost.** Run `share-frame reset`.
 
 ## Development

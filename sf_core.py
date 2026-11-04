@@ -2,7 +2,7 @@
 import json, os, re, subprocess
 
 DEFAULTS = {"monitor": "", "x": "100", "y": "100", "width": "1280", "height": "720",
-            "color": "#89b4fa", "border": "4", "opacity": "1.0"}
+            "color": "#89b4fa", "border": "4", "opacity": "1.0", "hide_delay": "1"}
 
 def load(path):
     c = dict(DEFAULTS)

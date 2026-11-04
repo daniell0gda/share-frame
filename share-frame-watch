@@ -1,24 +1,32 @@
 #!/usr/bin/env bash
 # Show the frame while Hyprland reports an active screencast, hide it after.
-# Counts overlapping screencasts and hides only after none was active for HIDE_DELAY seconds,
+# Counts overlapping screencasts and hides only after none was active for hide_delay seconds,
 # because Chromium opens short preview streams before the real one.
 set -euo pipefail
 HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-HIDE_DELAY="${SHARE_FRAME_HIDE_DELAY:-3}"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/share-frame/config"
 
 exec 9>"$RUNTIME/share-frame-watch.lock"
 flock -n 9 || exit 0
 
+hide_delay_ms() {
+  local seconds="${SHARE_FRAME_HIDE_DELAY:-}"
+  [[ -z $seconds && -f $CONF ]] && seconds=$(sed -n 's/^hide_delay *= *\([0-9]\{1,\}\).*/\1/p' "$CONF")
+  echo $(( ${seconds:-1} * 1000 ))
+}
+
+now_ms() { echo $(( ${EPOCHREALTIME/[.,]/} / 1000 )); }
+
 active=0
 hide_at=-1
 
-while IFS= read -r -t 1 line || (( $? > 128 )); do
+while IFS= read -r -t 0.2 line || (( $? > 128 )); do
   case "$line" in
     screencast\>\>1,*) active=$((active + 1)); hide_at=-1; "$HERE/share-frame" show >/dev/null ;;
-    screencast\>\>0,*) (( active > 0 )) && active=$((active - 1)); (( active == 0 )) && hide_at=$((SECONDS + HIDE_DELAY)) ;;
+    screencast\>\>0,*) (( active > 0 )) && active=$((active - 1)); (( active == 0 )) && hide_at=$(( $(now_ms) + $(hide_delay_ms) )) ;;
   esac
-  if (( hide_at >= 0 && SECONDS >= hide_at )); then
+  if (( hide_at >= 0 )) && (( $(now_ms) >= hide_at )); then
     "$HERE/share-frame" hide >/dev/null
     hide_at=-1
   fi

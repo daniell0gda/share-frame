@@ -8,6 +8,8 @@ what is inside the frame.
 The border sits just **outside** the shared rectangle, so it never shows up in the share.
 It is useful most on ultrawide monitors, where sharing the whole screen is too much.
 
+![share-frame demo: choose "share-frame area" in the share dialog and the call shows only the framed region](docs/demo.gif)
+
 Design details: [docs/SPEC.md](docs/SPEC.md).
 
 ## Install (Omarchy plugin)

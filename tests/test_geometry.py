@@ -1,4 +1,4 @@
-import os, sys, unittest
+import os, select, subprocess, sys, unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from sf_core import *
 
@@ -68,4 +68,18 @@ class T(unittest.TestCase):
         g2 = drag_geom(g, "move", 1500 - p0[0], 300 - p0[1], MW, MH)
         hx, hy, _, _ = zones_abs(g, 4)["move"]; hx2, hy2, _, _ = zones_abs(g2, 4)["move"]
         self.assertEqual((p0[0] - hx, p0[1] - hy), (1500 - hx2, 300 - hy2))
+
+LINGERING_CHILD = ("from sf_core import close_inherited_fds; import time; "
+                   "close_inherited_fds(); print('closed', flush=True); time.sleep(30)")
+
+class InheritedFdsTest(unittest.TestCase):
+    def test_closing_inherited_fds_gives_the_pipe_reader_eof(self):
+        read_end, write_end = os.pipe()
+        child = subprocess.Popen([sys.executable, "-c", LINGERING_CHILD], pass_fds=[write_end],
+                                 cwd=os.path.join(os.path.dirname(__file__), ".."), stdout=subprocess.PIPE)
+        os.close(write_end)
+        self.addCleanup(lambda: (child.kill(), child.wait(), child.stdout.close()))
+        self.assertEqual(child.stdout.readline(), b"closed\n")
+        self.assertEqual(select.select([read_end], [], [], 5)[0], [read_end])
+        self.assertEqual(os.read(read_end, 1), b"")
 unittest.main()

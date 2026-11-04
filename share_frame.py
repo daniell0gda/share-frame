@@ -9,6 +9,8 @@ import os, socket, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sf_core import *  # noqa: F401,F403
 
+close_inherited_fds()
+
 if len(sys.argv) > 1 and sys.argv[1] == "--save-pick":
     save_pick(sys.argv[2], *sys.argv[3:7]); sys.exit(0)
 

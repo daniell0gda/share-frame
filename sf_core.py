@@ -25,6 +25,14 @@ def save(path, c):
                 "# The border is drawn just outside it.\n")
         for k in DEFAULTS: f.write(f"{k} = {c[k]}\n")
 
+def close_inherited_fds():
+    """Close every fd above stderr.
+
+    A daemon started from the portal picker inherits xdph's result pipes. While it
+    holds them xdph never sees EOF, so the whole portal (and Teams) hangs.
+    """
+    os.closerange(3, os.sysconf("SC_OPEN_MAX"))
+
 def save_pick(path, x, y, w, h):
     x, y, w, h = map(int, (x, y, w, h))
     c = load(path)

@@ -85,6 +85,11 @@ When an app asks to share, a small dialog appears:
   (`hyprland-preview-share-picker`, else `hyprland-share-picker`; override with
   `SHARE_FRAME_FALLBACK_PICKER`).
 
+Chromium (and so Teams in the browser) asks the portal twice for each share: once
+for the preview in its own dialog and once when you click **Share**. To avoid a
+second question, the picker answers **share-frame area** by itself for 90 seconds
+after you chose it. Set `SHARE_FRAME_REMEMBER_SECONDS=0` to turn this off.
+
 ## Command line
 
 | Command | What it does |
@@ -165,6 +170,11 @@ opacity = 1.0
 
 - **The share never starts after you choose the frame.** Restart the portal:
   `systemctl --user restart xdg-desktop-portal-hyprland`. Make sure you run version 1.0.0 or newer.
+- **Teams or Chromium never accepts the share and asks again.** Chromium may fail to
+  import the portal's DMA-BUF frames (`EGL_BAD_MATCH` in its log). Make the portal send
+  plain memory buffers: add `force_shm = true` inside `screencopy { … }` in
+  `~/.config/hypr/xdph.conf`, then run `systemctl --user restart xdg-desktop-portal-hyprland`.
+  This uses a little more CPU.
 - **The dialog does not appear.** Check that `~/.config/hypr/xdph.conf` has
   `custom_picker_binary = ~/.local/bin/share-frame-picker`. Run `~/.config/omarchy/plugins/io.github.daniell0gda.share-frame/install.sh` to repair it.
 - **The frame is lost.** Run `share-frame reset`.

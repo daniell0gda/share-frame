@@ -14,7 +14,27 @@ fallback() {
 }
 [[ -f $CONF ]] || fallback "$@"
 
-choice=${SHARE_FRAME_PICK:-$(/usr/bin/python3 "$HERE/picker_dialog.py")} || choice=cancel
+REMEMBER_SECONDS=${SHARE_FRAME_REMEMBER_SECONDS:-90}
+STAMP="${XDG_RUNTIME_DIR:-/tmp}/share-frame-last-pick"
+
+picked_frame_recently() {
+  local picked_at
+  [[ -f $STAMP ]] && read -r picked_at < "$STAMP" && [[ $picked_at =~ ^[0-9]+$ ]] &&
+    (( $(date +%s) - picked_at < REMEMBER_SECONDS ))
+}
+
+remember_choice() {
+  if [[ $1 == frame ]]; then date +%s > "$STAMP"; else rm -f "$STAMP"; fi
+}
+
+if [[ -n ${SHARE_FRAME_PICK:-} ]]; then
+  choice=$SHARE_FRAME_PICK
+elif picked_frame_recently; then
+  choice=frame
+else
+  choice=$(/usr/bin/python3 "$HERE/picker_dialog.py") || choice=cancel
+  remember_choice "$choice"
+fi
 case "$choice" in
   frame)
     "$HERE/share-frame" show >/dev/null 2>&1

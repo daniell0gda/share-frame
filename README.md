@@ -37,7 +37,10 @@ Update:
 
 ```sh
 omarchy plugin update io.github.daniell0gda.share-frame
+omarchy restart shell
 ```
+
+The shell restart loads the new bar icon code. Without it, the old code keeps running.
 
 Remove (run the uninstaller first, so the portal setting is cleaned up):
 

@@ -1,31 +1,91 @@
 # share-frame
 
-A click-through colored border that marks the screen region you're sharing
-(Teams, Meet, Zoom, OBS…) on Hyprland. Built for Omarchy, works on any Hyprland.
+**A share-area frame for [Omarchy](https://omarchy.org).** It draws a click-through
+colored border around the screen region you share in Teams, Meet, Zoom or OBS. It
+also makes the share portal send exactly that region, so the call shows only
+what is inside the frame.
 
 The border sits just **outside** the shared rectangle, so it never shows up in the share.
+It is useful most on ultrawide monitors, where sharing the whole screen is too much.
 
 Design details: [docs/SPEC.md](docs/SPEC.md).
 
-## Dependencies
+## Install (Omarchy plugin)
+
+Install the dependencies first. Omarchy ships most of them.
 
 ```sh
-sudo pacman -S --needed python-gobject gtk4 gtk4-layer-shell slurp socat
+omarchy-pkg-add python-gobject gtk4 gtk4-layer-shell slurp socat
 ```
 
-All of these ship with Omarchy except possibly `gtk4-layer-shell`/`socat`; `install.sh` tells you what's missing.
-
-## Install
+Add the plugin:
 
 ```sh
-git clone <this repo> ~/Projects/share-frame
-cd ~/Projects/share-frame && ./install.sh
+omarchy plugin add https://github.com/daniell0gda/share-frame --enable
 ```
 
-This symlinks `~/.local/bin/share-frame` and adds a **share frame** entry to the
-launcher (`Super + Space`). Restart walker if it doesn't appear: `omarchy-restart-walker`.
+A frame icon appears in the bar. On first load the plugin:
 
-## Usage
+- links `share-frame` into `~/.local/bin`
+- registers the share picker in `~/.config/hypr/xdph.conf` (your file is backed up first)
+- restarts `xdg-desktop-portal-hyprland`
+- adds a **share frame** entry to the app launcher
+
+If a package is missing, the bar icon tells you which one. Click it to install.
+
+Update:
+
+```sh
+omarchy plugin update io.github.daniell0gda.share-frame
+```
+
+Remove (run the uninstaller first, so the portal setting is cleaned up):
+
+```sh
+~/.config/omarchy/plugins/io.github.daniell0gda.share-frame/uninstall.sh
+omarchy plugin remove io.github.daniell0gda.share-frame
+```
+
+Even if you skip the uninstaller, screen sharing keeps working. The installed picker
+launcher falls back to the normal picker when share-frame is gone.
+
+Requirements: Omarchy with plugin support (tested on 4.0), Hyprland and
+`xdg-desktop-portal-hyprland`.
+
+### Install without the plugin system
+
+Any Hyprland setup works for the frame itself:
+
+```sh
+git clone https://github.com/daniell0gda/share-frame ~/.local/share/share-frame
+~/.local/share/share-frame/install.sh
+```
+
+## Use
+
+1. Draw the area: right click the bar icon, or run `share-frame pick`.
+2. In Teams, start a screen share.
+3. In the dialog, choose **share-frame area** (`Enter` or `1`).
+
+The call now shows exactly the inside of the frame.
+
+| Bar icon | Action |
+|---|---|
+| Left click | Show or hide the frame |
+| Right click | Draw a new region |
+| Middle click | Edit: move and resize the frame |
+
+### Share dialog
+
+When an app asks to share, a small dialog appears:
+
+- **share-frame area** (`Enter` or `1`): shares exactly the inside of the frame
+  (shows the frame if it is hidden).
+- **Screen / window / region…** (`2`): opens your normal picker
+  (`hyprland-preview-share-picker`, else `hyprland-share-picker`; override with
+  `SHARE_FRAME_FALLBACK_PICKER`).
+
+## Command line
 
 | Command | What it does |
 |---|---|
@@ -33,7 +93,7 @@ launcher (`Super + Space`). Restart walker if it doesn't appear: `omarchy-restar
 | `share-frame pick` | Draw the region with `slurp`, save it, show the frame |
 | `share-frame edit` | Make the frame interactive: drag to move, drag edges/corners to resize |
 | `share-frame lock` | Save and go back to click-through |
-| `share-frame reset` | Recenter on the monitor at 1280×720 (use if it's lost) |
+| `share-frame reset` | Recenter on the monitor at 1280×720 (use if it is lost) |
 | `share-frame show` / `hide` | Explicit show / hide |
 | `share-frame status` | `locked shown`, `edit hidden`, `stopped`… |
 | `share-frame quit` | Stop the daemon |
@@ -50,18 +110,45 @@ Even when locked, the frame has a few live spots, all **outside** the shared are
 - **Corner grips** (other three corners): hover shows a resize cursor, drag to resize.
 - **Border strips**: drag to resize that edge.
 
-Everything else, including the whole interior, passes clicks through. The frame (handle included) always stays on
-the monitor; it's saved to the config when you let go. If a saved position is
-off-screen it's recentered on startup.
+Everything else, including the whole interior, passes clicks through. The frame
+always stays on the monitor. It is saved to the config when you let go. If a saved
+position is off-screen, it is recentered on startup.
 
-> The frame can't be focused with Hyprland window shortcuts (it's a layer-shell
+> The frame cannot be focused with Hyprland window shortcuts (it is a layer-shell
 > overlay, not a window). Why: see [docs/SPEC.md](docs/SPEC.md#focus).
 
-Typical flow: `share-frame pick` → in Teams, share the same region → done.
+## Keybindings (optional)
+
+Omarchy 4 (Lua config), in `~/.config/hypr/bindings.lua`:
+
+```lua
+o.bind("SUPER + SHIFT + F", "Share frame", "share-frame")
+o.bind("SUPER + SHIFT + ALT + F", "Share frame pick", "share-frame pick")
+o.bind("SUPER + CTRL + F", "Share frame edit", "share-frame edit")
+```
+
+Older Omarchy (`hyprland.conf` syntax):
+
+```ini
+bind = SUPER SHIFT, F, exec, share-frame
+bind = SUPER SHIFT ALT, F, exec, share-frame pick
+bind = SUPER CTRL, F, exec, share-frame edit
+```
+
+The frame is a layer-shell surface, so it is on every workspace already.
+
+## Auto-show while sharing (optional)
+
+Start `share-frame watch` with your session (Omarchy 4: `o.launch_on_start("share-frame watch")`
+in `~/.config/hypr/autostart.lua`; older: `exec-once = share-frame watch`).
+
+It listens on Hyprland's event socket. It shows the frame on `screencast>>1` and
+hides it on `screencast>>0`. Hyprland fires these for any screencast, including
+screen recording, not per region.
 
 ## Config
 
-`~/.config/share-frame/config` (written by `pick`/`edit`, safe to hand-edit, then `share-frame reload`):
+`~/.config/share-frame/config` (written by `pick`/`edit`, safe to edit by hand, then run `share-frame reload`):
 
 ```ini
 monitor = DP-1      # Hyprland output name; empty/unknown = focused monitor
@@ -74,70 +161,19 @@ border = 4          # px, drawn outside the rectangle
 opacity = 1.0
 ```
 
-## Hyprland config examples
+## Troubleshooting
 
-Add to `~/.config/hypr/hyprland.conf` (or `bindings.conf` on Omarchy):
+- **The share never starts after you choose the frame.** Restart the portal:
+  `systemctl --user restart xdg-desktop-portal-hyprland`. Make sure you run version 1.0.0 or newer.
+- **The dialog does not appear.** Check that `~/.config/hypr/xdph.conf` has
+  `custom_picker_binary = ~/.local/bin/share-frame-picker`. Run `~/.config/omarchy/plugins/io.github.daniell0gda.share-frame/install.sh` to repair it.
+- **The frame is lost.** Run `share-frame reset`.
 
-```ini
-# no blur/shadow/animation on the overlay
-layerrule = noanim, share-frame
-layerrule = blur off, share-frame   # older Hyprland: just omit, blur is off for layers by default
-
-# keybinds
-bind = SUPER SHIFT, F, exec, share-frame
-bind = SUPER SHIFT ALT, F, exec, share-frame pick
-bind = SUPER CTRL, F, exec, share-frame edit
-```
-
-It's a layer-shell surface, so it's on every workspace already (no `pin` needed).
-
-## Share exactly the frame (portal picker)
-
-Teams/Chromium can't "see" the overlay, so share-frame ships a picker for
-xdg-desktop-portal-hyprland. Set it in `~/.config/hypr/xdph.conf`:
-
-```ini
-screencopy {
-    allow_token_by_default = true
-    custom_picker_binary = /home/you/.local/bin/share-frame-picker
-}
-```
+## Development
 
 ```sh
-systemctl --user restart xdg-desktop-portal-hyprland
-```
-
-`install.sh` adds this only if `xdph.conf` is missing or has no
-`custom_picker_binary` (with a backup); otherwise it prints the line to change.
-
-When an app asks to share, a small dialog appears:
-
-- **share-frame area** (`Enter`/`1`): shares exactly the inside of the frame
-  (shows the frame if hidden).
-- **Screen / window / region…** (`2`): opens your normal picker
-  (`hyprland-preview-share-picker`, else `hyprland-share-picker`; override with
-  `SHARE_FRAME_FALLBACK_PICKER`).
-
-Optional, make the dialog float:
-
-```ini
-windowrule = float, class:^(dev.ferens.ShareFramePicker)$
-```
-
-## Auto-show while sharing
-
-```ini
-exec-once = share-frame watch
-```
-
-Listens on Hyprland's event socket and shows the frame on `screencast>>1`,
-hides it on `screencast>>0`. Note: Hyprland fires these for any screencast
-(including screen recording), not per region.
-
-## Uninstall
-
-```sh
-./uninstall.sh   # removes the symlink and launcher entry, keeps your config
+python3 tests/test_geometry.py
+omarchy plugin validate .
 ```
 
 ## License

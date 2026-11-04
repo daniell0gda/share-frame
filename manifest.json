@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.daniell0gda.share-frame",
+  "name": "Share frame",
+  "version": "1.0.0",
+  "author": "Daniel Ferens",
+  "license": "MIT",
+  "homepage": "https://github.com/daniell0gda/share-frame",
+  "description": "Mark the screen region you share in Teams, Meet or Zoom with a click-through border, and share exactly that area through the Hyprland screencast portal.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Share frame",
+    "description": "Show or hide the share frame. Right click draws a new region, middle click edits it.",
+    "category": "Utility",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

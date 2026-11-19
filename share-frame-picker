@@ -16,6 +16,7 @@ fallback() {
 
 REMEMBER_SECONDS=${SHARE_FRAME_REMEMBER_SECONDS:-90}
 STAMP="${XDG_RUNTIME_DIR:-/tmp}/share-frame-last-pick"
+SHARING="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/share-frame-sharing"
 
 picked_frame_recently() {
   local picked_at
@@ -37,6 +38,7 @@ else
 fi
 case "$choice" in
   frame)
+    touch "$SHARING"
     "$HERE/share-frame" show >/dev/null 2>&1
     st=$("$HERE/share-frame" status 2>/dev/null)   # "locked shown DP-1 WxH+X+Y"
     sel=$(/usr/bin/python3 - "$st" "$CONF" <<'P'

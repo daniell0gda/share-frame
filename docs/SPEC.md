@@ -105,7 +105,10 @@ default `toggle`. Any command except `quit`/`status` auto-starts the daemon.
 ## Screencast watch (opt-in)
 
 `share-frame watch` reads `$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock`
-via `socat` and maps `screencast>>1,*` → `show`, `screencast>>0,*` → `hide`.
+via `socat` and counts `screencast>>1,*` / `screencast>>0,*`. It never shows the frame:
+`share-frame-picker` shows it and creates `$XDG_RUNTIME_DIR/share-frame-sharing` when
+"share-frame area" is chosen. When no screencast was active for `hide_delay` seconds,
+the watcher removes that marker and hides the frame. Without the marker it does nothing.
 Intended for `exec-once`.
 
 ## Focus

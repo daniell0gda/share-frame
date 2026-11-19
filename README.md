@@ -31,7 +31,7 @@ A frame icon appears in the bar. On first load the plugin:
 - links `share-frame` into `~/.local/bin`
 - writes its own picker launcher, `~/.local/bin/share-frame-picker`
 - adds a **share frame** entry to the app launcher
-- starts a watcher that shows the frame while you share and hides it afterwards
+- starts a watcher that hides the frame after a share of the frame area stops
 
 It does **not** edit your Hyprland config by itself. To share the frame area, the screen
 share portal must know the picker. The bar icon shows a tooltip asking for this. When you
@@ -115,7 +115,7 @@ after you chose it. Set `SHARE_FRAME_REMEMBER_SECONDS=0` to turn this off.
 | `share-frame show` / `hide` | Explicit show / hide |
 | `share-frame status` | `locked shown`, `edit hidden`, `stopped`… |
 | `share-frame quit` | Stop the daemon |
-| `share-frame watch` | Auto-show while a screencast is active (opt-in, see below) |
+| `share-frame watch` | Auto-hide after a share of the frame area stops (see below) |
 
 In edit mode: arrows move, `Shift`+arrows resize, hold `Alt` for 10px steps,
 `Enter` saves and locks, `Esc` cancels.
@@ -157,7 +157,9 @@ The frame is a layer-shell surface, so it is on every workspace already.
 
 ## Auto-show and auto-hide while sharing
 
-The frame appears when a share starts and hides 1 second after the last share stops.
+The frame appears only when you choose **share-frame area** in the share dialog. It hides
+1 second after the last share stops. Other shares (a window, a full screen, a recording)
+do not show the frame, and do not hide a frame you showed yourself.
 The Omarchy plugin starts this watcher for you. Without the plugin, start
 `share-frame watch` with your session (Omarchy 4: `o.launch_on_start("share-frame watch")`
 in `~/.config/hypr/autostart.lua`; older: `exec-once = share-frame watch`).
@@ -165,8 +167,7 @@ in `~/.config/hypr/autostart.lua`; older: `exec-once = share-frame watch`).
 It listens on Hyprland's event socket and counts running screencasts. Teams opens short
 preview streams before the real one, so the delay stops the frame from flickering.
 Change the delay with `hide_delay` in the config (whole seconds; the watcher reads it at
-each stop). The environment variable `SHARE_FRAME_HIDE_DELAY` overrides it. Hyprland sends these events
-for any screencast, including screen recording, not per region.
+each stop). The environment variable `SHARE_FRAME_HIDE_DELAY` overrides it.
 
 ## Config
 

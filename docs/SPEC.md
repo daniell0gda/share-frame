@@ -148,6 +148,18 @@ config, without `r` (the frame may move, so no restore token). Any other choice
 `exec`s the fallback picker with the same arguments. `SHARE_FRAME_PICK=frame|other`
 skips the dialog (testing/automation). No output / non-zero exit = cancel.
 
+xdph does not pass the requesting app to the picker. While the picker runs, the app's
+ScreenCast request waits on the portal frontend at
+`/org/freedesktop/portal/desktop/request/<sender>/<token>`, where `<sender>` is the
+app's D-Bus unique name. The picker reads these paths with `busctl --user tree
+org.freedesktop.portal.Desktop`. If exactly one sender has waiting requests, that is the
+requesting app. A frame choice is stored as `<sender> <time>` in
+`$XDG_RUNTIME_DIR/share-frame-last-pick` and answers that sender only, for
+`SHARE_FRAME_REMEMBER_SECONDS` (default 90). Unique names are never reused, so the
+choice cannot pass to another client. With no or several senders, the picker shows the
+dialog and remembers nothing. Chromium sends its preview and final requests over one
+connection, so it sees the dialog once.
+
 ## Limitations
 
 - The surface is monitor-sized (transparent). Composited cheaply by Hyprland, but

@@ -101,7 +101,8 @@ When an app asks to share, a small dialog appears:
 Chromium (and so Teams in the browser) asks the portal twice for each share: once
 for the preview in its own dialog and once when you click **Share**. To avoid a
 second question, the picker answers **share-frame area** by itself for 90 seconds
-after you chose it. Set `SHARE_FRAME_REMEMBER_SECONDS=0` to turn this off.
+after you chose it, but only to the same app. Any other app sees the dialog. Set
+`SHARE_FRAME_REMEMBER_SECONDS=0` to turn this off.
 
 ## Command line
 

@@ -18,7 +18,8 @@ class PickerTest(unittest.TestCase):
                    f"open({self.path('dialogs')!r}, 'a').write('x')\n"
                    f"print(open({self.path('dialog-choice')!r}).read())\n")
         self.write_executable("share-frame", '[[ $1 == status ]] && echo "locked shown DP-1 800x600+10+20"\nexit 0\n')
-        self.write_executable("bin/busctl", f'cat {self.path("portal-objects")}\n')
+        self.write("busctl-exit", "0")
+        self.write_executable("bin/busctl", f'cat {self.path("portal-objects")}\nexit "$(cat {self.path("busctl-exit")})"\n')
         self.write_executable("bin/fallback-picker", "exit 1\n")
         self.waiting_requests()
 
@@ -73,6 +74,12 @@ class PickerTest(unittest.TestCase):
 
     def test_choice_is_not_remembered_when_the_asking_app_is_unknown(self):
         self.request_share("1_42", "1_99")
+        self.request_share("1_42")
+        self.assertEqual(self.dialogs_shown(), 2)
+
+    def test_failed_portal_lookup_with_partial_output_shows_the_dialog(self):
+        self.request_share("1_42")
+        self.write("busctl-exit", "1")
         self.request_share("1_42")
         self.assertEqual(self.dialogs_shown(), 2)
 

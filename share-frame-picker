@@ -18,23 +18,33 @@ REMEMBER_SECONDS=${SHARE_FRAME_REMEMBER_SECONDS:-90}
 STAMP="${XDG_RUNTIME_DIR:-/tmp}/share-frame-last-pick"
 SHARING="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/share-frame-sharing"
 
-picked_frame_recently() {
-  local picked_at
-  [[ -f $STAMP ]] && read -r picked_at < "$STAMP" && [[ $picked_at =~ ^[0-9]+$ ]] &&
+requesting_app() {
+  local apps
+  apps=$(busctl --user --timeout=1 tree org.freedesktop.portal.Desktop --list 2>/dev/null |
+    sed -n 's|^/org/freedesktop/portal/desktop/request/\([^/]*\)/.*|\1|p' | sort -u)
+  [[ -n $apps && $apps != *$'\n'* ]] && echo "$apps"
+}
+
+picked_frame_recently_by() {
+  local app=$1 picked_app picked_at
+  [[ -n $app && -f $STAMP ]] && read -r picked_app picked_at < "$STAMP" &&
+    [[ $picked_app == "$app" && $picked_at =~ ^[0-9]+$ ]] &&
     (( $(date +%s) - picked_at < REMEMBER_SECONDS ))
 }
 
-remember_choice() {
-  if [[ $1 == frame ]]; then date +%s > "$STAMP"; else rm -f "$STAMP"; fi
+remember_choice_of() {
+  local app=$1 choice=$2
+  if [[ -n $app && $choice == frame ]]; then echo "$app $(date +%s)" > "$STAMP"; else rm -f "$STAMP"; fi
 }
 
+app=$(requesting_app)
 if [[ -n ${SHARE_FRAME_PICK:-} ]]; then
   choice=$SHARE_FRAME_PICK
-elif picked_frame_recently; then
+elif picked_frame_recently_by "$app"; then
   choice=frame
 else
   choice=$(/usr/bin/python3 "$HERE/picker_dialog.py") || choice=cancel
-  remember_choice "$choice"
+  remember_choice_of "$app" "$choice"
 fi
 case "$choice" in
   frame)

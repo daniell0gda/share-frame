@@ -19,9 +19,9 @@ STAMP="${XDG_RUNTIME_DIR:-/tmp}/share-frame-last-pick"
 SHARING="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/share-frame-sharing"
 
 requesting_app() {
-  local apps
-  apps=$(busctl --user --timeout=1 tree org.freedesktop.portal.Desktop --list 2>/dev/null |
-    sed -n 's|^/org/freedesktop/portal/desktop/request/\([^/]*\)/.*|\1|p' | sort -u)
+  local objects apps
+  objects=$(busctl --user --timeout=1 tree org.freedesktop.portal.Desktop --list 2>/dev/null) || return 1
+  apps=$(sed -n 's|^/org/freedesktop/portal/desktop/request/\([^/]*\)/.*|\1|p' <<< "$objects" | sort -u)
   [[ -n $apps && $apps != *$'\n'* ]] && echo "$apps"
 }
 

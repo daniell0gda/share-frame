@@ -156,8 +156,8 @@ org.freedesktop.portal.Desktop`. If exactly one sender has waiting requests, tha
 requesting app. A frame choice is stored as `<sender> <time>` in
 `$XDG_RUNTIME_DIR/share-frame-last-pick` and answers that sender only, for
 `SHARE_FRAME_REMEMBER_SECONDS` (default 90). Unique names are never reused, so the
-choice cannot pass to another client. With no or several senders, the picker shows the
-dialog and remembers nothing. Chromium sends its preview and final requests over one
+choice cannot pass to another client. With no or several senders, or when `busctl`
+fails (its output may then be partial), the picker shows the dialog and remembers nothing. Chromium sends its preview and final requests over one
 connection, so it sees the dialog once.
 
 ## Limitations

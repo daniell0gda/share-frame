@@ -104,12 +104,16 @@ default `toggle`. Any command except `quit`/`status` auto-starts the daemon.
 
 ## Screencast watch (opt-in)
 
-`share-frame watch` reads `$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock`
-via `socat` and counts `screencast>>1,*` / `screencast>>0,*`. It never shows the frame:
+`share-frame watch` runs `pw-dump` every second (`SHARE_FRAME_POLL_SECONDS`) and looks for
+the `xdph-streaming` stream that xdph creates for each share. It never shows the frame:
 `share-frame-picker` shows it and creates `$XDG_RUNTIME_DIR/share-frame-sharing` when
-"share-frame area" is chosen. When no screencast was active for `hide_delay` seconds,
-the watcher removes that marker and hides the frame. Without the marker it does nothing.
-Intended for `exec-once`.
+"share-frame area" is chosen. After it has seen a stream, and no stream existed for
+`hide_delay` seconds, the watcher removes that marker and hides the frame. Without the
+marker it does nothing. A failed `pw-dump` skips that check. Intended for `exec-once`.
+
+The stream exists as long as the share lives, so a pause in frames (for example static
+content) does not hide the frame. Hyprland's `screencast` events were not used for this:
+they follow the frame flow, not the lifetime of the share.
 
 ## Focus
 
@@ -167,8 +171,8 @@ connection, so it sees the dialog once.
 
 - Region coordinates are not read from the share picker — you pick the same
   rectangle twice (once in share-frame, once in Teams/xdg-desktop-portal).
-- `screencast` events don't say which region/output is shared, nor do they fire for
-  every client identically; watch is a heuristic.
+- The `xdph-streaming` stream doesn't say which region/output is shared; watch only
+  knows that some xdph share is running.
 - If the region touches the monitor edge, that side of the border is off-screen.
 - One frame at a time; Hyprland-only for `pick` (other wlroots compositors work for the overlay itself).
 - Fractional scaling: geometry is in logical px; may be off by a pixel.

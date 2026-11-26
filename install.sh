@@ -19,7 +19,7 @@ XDPH=~/.config/hypr/xdph.conf
 
 report_missing_packages() {
   local missing=()
-  for p in python-gobject gtk4 gtk4-layer-shell slurp socat; do
+  for p in python-gobject gtk4 gtk4-layer-shell slurp pipewire; do
     pacman -Q "$p" &>/dev/null || missing+=("$p")
   done
   if ((${#missing[@]})); then

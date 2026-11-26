@@ -167,10 +167,19 @@ in `~/.config/hypr/autostart.lua`; older: `exec-once = share-frame watch`).
 
 While you share the frame area, it checks PipeWire every second for the screencast stream
 of the share. The frame hides when the stream is gone. At other times it only checks that
-a marker file exists, which costs almost nothing. Teams opens short preview streams before the real one, so the
-delay stops the frame from flickering.
+a marker file exists, which costs almost nothing. Teams opens short preview streams before
+the real one, so the delay stops the frame from flickering.
 Change the delay with `hide_delay` in the config (whole seconds; the watcher reads it at
 each stop). The environment variable `SHARE_FRAME_HIDE_DELAY` overrides it.
+
+Known limits of the auto-hide:
+
+- If the gap between Teams' preview stream and the real stream is longer than `hide_delay`,
+  the frame hides too early. Raise `hide_delay` (for example to 3).
+- The watcher cannot tell which share a stream belongs to. If you record the screen during
+  the share, the frame stays until that stream also ends.
+- If the share never starts after you choose **share-frame area**, the frame stays shown.
+  Run `share-frame hide` to hide it.
 
 ## Config
 

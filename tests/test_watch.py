@@ -14,7 +14,8 @@ class WatchTest(unittest.TestCase):
         shutil.copy(os.path.join(REPO, "share-frame-watch"), self.dir)
         self.write("dump", OTHER_DUMP)
         self.write("pw-dump-exit", "0")
-        self.write_executable("bin/pw-dump", f'cat {self.path("dump")}\nexit "$(cat {self.path("pw-dump-exit")})"\n')
+        self.write_executable("bin/pw-dump", f'echo run >> {self.path("queries")}\n'
+                                             f'cat {self.path("dump")}\nexit "$(cat {self.path("pw-dump-exit")})"\n')
         self.write_executable("share-frame", f'echo "$1" >> {self.path("calls")}\n')
         self.marker = os.path.join(self.runtime, "share-frame-sharing")
         self.process = None
@@ -56,6 +57,12 @@ class WatchTest(unittest.TestCase):
             return 0
         with open(self.path("calls")) as f:
             return f.read().split().count("hide")
+
+    def test_pipewire_is_not_queried_when_the_frame_is_not_being_shared(self):
+        self.write("dump", STREAM_DUMP)
+        self.start_watching()
+        self.settle()
+        self.assertFalse(os.path.exists(self.path("queries")))
 
     def test_frame_stays_while_the_screencast_stream_exists(self):
         self.mark_sharing()

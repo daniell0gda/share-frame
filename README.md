@@ -165,8 +165,9 @@ The Omarchy plugin starts this watcher for you. Without the plugin, start
 `share-frame watch` with your session (Omarchy 4: `o.launch_on_start("share-frame watch")`
 in `~/.config/hypr/autostart.lua`; older: `exec-once = share-frame watch`).
 
-It checks PipeWire every second for the screencast stream of the share. The frame hides
-when the stream is gone. Teams opens short preview streams before the real one, so the
+While you share the frame area, it checks PipeWire every second for the screencast stream
+of the share. The frame hides when the stream is gone. At other times it only checks that
+a marker file exists, which costs almost nothing. Teams opens short preview streams before the real one, so the
 delay stops the frame from flickering.
 Change the delay with `hide_delay` in the config (whole seconds; the watcher reads it at
 each stop). The environment variable `SHARE_FRAME_HIDE_DELAY` overrides it.

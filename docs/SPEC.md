@@ -104,12 +104,13 @@ default `toggle`. Any command except `quit`/`status` auto-starts the daemon.
 
 ## Screencast watch (opt-in)
 
-`share-frame watch` runs `pw-dump` every second (`SHARE_FRAME_POLL_SECONDS`) and looks for
-the `xdph-streaming` stream that xdph creates for each share. It never shows the frame:
-`share-frame-picker` shows it and creates `$XDG_RUNTIME_DIR/share-frame-sharing` when
-"share-frame area" is chosen. After it has seen a stream, and no stream existed for
-`hide_delay` seconds, the watcher removes that marker and hides the frame. Without the
-marker it does nothing. A failed `pw-dump` skips that check. Intended for `exec-once`.
+`share-frame watch` wakes every second (`SHARE_FRAME_POLL_SECONDS`) and checks for
+`$XDG_RUNTIME_DIR/share-frame-sharing`. It never shows the frame: `share-frame-picker`
+shows it and creates that marker when "share-frame area" is chosen. Only while the marker
+exists, the watcher runs `pw-dump` and looks for the `xdph-streaming` stream that xdph
+creates for each share. After it has seen a stream, and no stream existed for `hide_delay`
+seconds, it removes the marker and hides the frame. Without the marker it runs nothing
+else. A failed `pw-dump` skips that check. Intended for `exec-once`.
 
 The stream exists as long as the share lives, so a pause in frames (for example static
 content) does not hide the frame. Hyprland's `screencast` events were not used for this:

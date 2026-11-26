@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Hide the frame after a share of the frame area (marked by share-frame-picker) ends.
-# Polls PipeWire for the screencast stream of xdg-desktop-portal-hyprland and hides the frame
-# once the stream was gone for hide_delay seconds. Chromium opens short preview streams
-# before the real one, so the delay stops the frame from flickering.
+# While the picker's marker file exists, polls PipeWire for the screencast stream of
+# xdg-desktop-portal-hyprland and hides the frame once the stream was gone for hide_delay
+# seconds. Without the marker it only checks that the file exists. Chromium opens short
+# preview streams before the real one, so the delay stops the frame from flickering.
 set -euo pipefail
 HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
@@ -31,6 +32,11 @@ stream_seen=0
 gone_since_ms=-1
 
 while sleep "$POLL_SECONDS"; do
+  if [[ ! -e $SHARING ]]; then
+    stream_seen=0
+    gone_since_ms=-1
+    continue
+  fi
   graph=$(pw-dump 2>/dev/null) || continue
   if [[ $graph == *"$STREAM_NAME"* ]]; then
     stream_seen=1
